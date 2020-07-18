@@ -8,21 +8,25 @@
     using System.Globalization;
     using System.Threading;
 
+    using JetBrains.Annotations;
+
     [Export]
-    public class PerformanceTracer
+    public sealed class PerformanceTracer
     {
+        [NotNull]
         private readonly ITracer _tracer;
         private int _index;
 
         [ImportingConstructor]
-        public PerformanceTracer(ITracer tracer)
+        public PerformanceTracer([NotNull] ITracer tracer)
         {
             Contract.Requires(tracer != null);
 
             _tracer = tracer;
         }
 
-        public IDisposable Start(string message)
+        [NotNull]
+        public IDisposable Start([NotNull] string message)
         {
             Contract.Requires(message != null);
             Contract.Ensures(Contract.Result<IDisposable>() != null);
@@ -32,12 +36,15 @@
 
         private sealed class Tracer : IDisposable
         {
+            [NotNull]
             private readonly ITracer _tracer;
             private readonly int _index;
+            [NotNull]
             private readonly string _message;
+            [NotNull]
             private readonly Stopwatch _stopwatch = new Stopwatch();
 
-            public Tracer(ITracer tracer, int index, string message)
+            public Tracer([NotNull] ITracer tracer, int index, [NotNull] string message)
             {
                 Contract.Requires(tracer != null);
                 Contract.Requires(message != null);
@@ -59,6 +66,7 @@
 
             [ContractInvariantMethod]
             [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+            [Conditional("CONTRACTS_FULL")]
             private void ObjectInvariant()
             {
                 Contract.Invariant(_tracer != null);
@@ -69,6 +77,7 @@
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_tracer != null);

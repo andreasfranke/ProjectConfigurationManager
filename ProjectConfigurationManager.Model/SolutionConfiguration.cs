@@ -1,23 +1,27 @@
 ﻿namespace tomenglertde.ProjectConfigurationManager.Model
 {
-    using System;
     using System.Collections.ObjectModel;
+    using System.ComponentModel;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Linq;
 
+    using Equatable;
+
+    using JetBrains.Annotations;
+
     using TomsToolbox.Core;
-    using TomsToolbox.Desktop;
 
-    public class SolutionConfiguration : ObservableObject, IEquatable<SolutionConfiguration>
+    [ImplementsEquatable]
+    public sealed class SolutionConfiguration : INotifyPropertyChanged
     {
+        [NotNull, Equals]
         private readonly Solution _solution;
+        [NotNull]
         private readonly EnvDTE80.SolutionConfiguration2 _solutionConfiguration;
-        private readonly ObservableCollection<SolutionContext> _contexts = new ObservableCollection<SolutionContext>();
-        private readonly string _name;
-        private readonly string _platformName;
 
-        internal SolutionConfiguration(Solution solution, EnvDTE80.SolutionConfiguration2 solutionConfiguration)
+        internal SolutionConfiguration([NotNull] Solution solution, [NotNull] EnvDTE80.SolutionConfiguration2 solutionConfiguration)
         {
             Contract.Requires(solution != null);
             Contract.Requires(solutionConfiguration != null);
@@ -25,128 +29,67 @@
 
             _solution = solution;
             _solutionConfiguration = solutionConfiguration;
-            _name = _solutionConfiguration.Name;
-            _platformName = _solutionConfiguration.PlatformName;
+
+            // ReSharper disable AssignNullToNotNullAttribute
+            Name = _solutionConfiguration.Name;
+            PlatformName = _solutionConfiguration.PlatformName;
+            // ReSharper restore AssignNullToNotNullAttribute
 
             Update();
         }
 
-        public string Name
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<string>() != null);
-                return _name;
-            }
-        }
+        [NotNull, UsedImplicitly]
+        public string Name { get; }
 
-        public string PlatformName
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<string>() != null);
-                return _platformName;
-            }
-        }
+        [NotNull, UsedImplicitly]
+        public string PlatformName { get; }
 
-        public string UniqueName
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<string>() != null);
-                return Name + "|" + PlatformName;
-            }
-        }
+        [NotNull]
+        public string UniqueName => Name + "|" + PlatformName;
 
-        public ObservableCollection<SolutionContext> Contexts
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ObservableCollection<SolutionContext>>() != null);
-                return _contexts;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public ObservableCollection<SolutionContext> Contexts { get; } = new ObservableCollection<SolutionContext>();
 
-        internal void Update()
+        [SuppressMessage("ReSharper", "AssignNullToNotNullAttribute")]
+        private void Update()
         {
-            _contexts.SynchronizeWith(_solutionConfiguration
-                .SolutionContexts.OfType<EnvDTE.SolutionContext>()
+            Contexts.SynchronizeWith(_solutionConfiguration.SolutionContexts
+                .OfType<EnvDTE.SolutionContext>()
                 .Select(ctx => new SolutionContext(_solution, this, ctx))
                 .ToArray());
         }
 
-        #region IEquatable implementation
-
-        /// <summary>
-        /// Returns a hash code for this instance.
-        /// </summary>
-        /// <returns>
-        /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table. 
-        /// </returns>
-        public override int GetHashCode()
+        [CustomGetHashCode, UsedImplicitly]
+        private int CustomGetHashCode()
         {
-            return _solutionConfiguration.GetHashCode();
-
+            return Contexts.Select(ctx => ctx.GetHashCode()).Aggregate(HashCode.Aggregate);
         }
 
-        /// <summary>
-        /// Determines whether the specified <see cref="System.Object"/> is equal to this instance.
-        /// </summary>
-        /// <param name="obj">The <see cref="System.Object"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="System.Object"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public override bool Equals(object obj)
+        [CustomEquals, UsedImplicitly]
+        [ContractVerification(false)]
+        private bool CustomEquals([NotNull] SolutionConfiguration other)
         {
-            return Equals(obj as SolutionConfiguration);
+            return Contexts.SequenceEqual(other.Contexts);
         }
 
-        /// <summary>
-        /// Determines whether the specified <see cref="SolutionConfiguration"/> is equal to this instance.
-        /// </summary>
-        /// <param name="other">The <see cref="SolutionConfiguration"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="SolutionConfiguration"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public bool Equals(SolutionConfiguration other)
-        {
-            return InternalEquals(this, other);
-        }
+        public event PropertyChangedEventHandler PropertyChanged;
 
-        private static bool InternalEquals(SolutionConfiguration left, SolutionConfiguration right)
+        [UsedImplicitly]
+        private void OnPropertyChanged([NotNull] string propertyName)
         {
-            if (ReferenceEquals(left, right))
-                return true;
-            if (ReferenceEquals(left, null))
-                return false;
-            if (ReferenceEquals(right, null))
-                return false;
-
-            return left._solutionConfiguration == right._solutionConfiguration;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
-
-        /// <summary>
-        /// Implements the operator ==.
-        /// </summary>
-        public static bool operator ==(SolutionConfiguration left, SolutionConfiguration right)
-        {
-            return InternalEquals(left, right);
-        }
-        /// <summary>
-        /// Implements the operator !=.
-        /// </summary>
-        public static bool operator !=(SolutionConfiguration left, SolutionConfiguration right)
-        {
-            return !InternalEquals(left, right);
-        }
-
-        #endregion
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_solution != null);
             Contract.Invariant(_solutionConfiguration != null);
-            Contract.Invariant(_name != null);
-            Contract.Invariant(_platformName != null);
-            Contract.Invariant(_contexts != null);
+            Contract.Invariant(Name != null);
+            Contract.Invariant(PlatformName != null);
+            Contract.Invariant(Contexts != null);
             Contract.Invariant(Contexts != null);
             Contract.Invariant(_solutionConfiguration.SolutionContexts != null);
         }

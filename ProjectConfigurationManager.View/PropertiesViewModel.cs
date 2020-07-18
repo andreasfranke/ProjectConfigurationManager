@@ -2,6 +2,7 @@
 {
     using System.ComponentModel;
     using System.ComponentModel.Composition;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Linq;
@@ -11,6 +12,8 @@
 
     using DataGridExtensions;
 
+    using JetBrains.Annotations;
+
     using tomenglertde.ProjectConfigurationManager.Model;
 
     using TomsToolbox.Desktop;
@@ -19,45 +22,38 @@
 
     [DisplayName("Properties")]
     [VisualCompositionExport(GlobalId.ShellRegion, Sequence = 2)]
-    class PropertiesViewModel : ObservableObject
+    internal sealed class PropertiesViewModel : ObservableObject
     {
-        private readonly Solution _solution;
-
         [ImportingConstructor]
-        public PropertiesViewModel(Solution solution)
+        public PropertiesViewModel([NotNull] Solution solution)
         {
             Contract.Requires(solution != null);
 
-            _solution = solution;
+            Solution = solution;
         }
 
-        public Solution Solution
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<Solution>() != null);
+        [NotNull]
+        public Solution Solution { get; }
 
-                return _solution;
-            }
-        }
-
+        [NotNull]
         public static ICommand CopyCommand => new DelegateCommand<DataGrid>(CanCopy, Copy);
 
-        private static void Copy(DataGrid dataGrid)
+        private static void Copy([NotNull] DataGrid dataGrid)
         {
             Contract.Requires(dataGrid != null);
 
             dataGrid.GetCellSelection().SetClipboardData();
         }
 
-        private static bool CanCopy(DataGrid dataGrid)
+        private static bool CanCopy([CanBeNull] DataGrid dataGrid)
         {
             return dataGrid?.HasRectangularCellSelection() ?? false;
         }
 
+        [NotNull]
         public static ICommand PasteCommand => new DelegateCommand<DataGrid>(CanPaste, Paste);
 
-        private static void Paste(DataGrid dataGrid)
+        private static void Paste([NotNull] DataGrid dataGrid)
         {
             Contract.Requires(dataGrid != null);
 
@@ -69,18 +65,21 @@
             dataGrid.CommitEdit();
         }
 
-        private static bool CanPaste(DataGrid dataGrid)
+        private static bool CanPaste([CanBeNull] DataGrid dataGrid)
         {
+            // ReSharper disable once PossibleNullReferenceException
             return Clipboard.ContainsText() && (dataGrid?.SelectedCells?.Any(cell => cell.Column.IsReadOnly) == false);
         }
 
+        [NotNull]
         public static ICommand DeleteCommand => new DelegateCommand<DataGrid>(CanDelete, Delete);
 
-        private static void Delete(DataGrid dataGrid)
+        private static void Delete([NotNull] DataGrid dataGrid)
         {
             Contract.Requires(dataGrid != null);
             Contract.Requires(dataGrid.SelectedCells != null);
 
+            // ReSharper disable once PossibleNullReferenceException
             foreach (var cell in dataGrid.SelectedCells)
             {
                 var configuration = (ProjectConfiguration)cell.Item;
@@ -101,16 +100,18 @@
             }
         }
 
-        private static bool CanDelete(DataGrid dataGrid)
+        private static bool CanDelete([CanBeNull] DataGrid dataGrid)
         {
+            // ReSharper disable once PossibleNullReferenceException
             return dataGrid?.SelectedCells?.Any(cell => cell.Column.IsReadOnly) == false;
         }
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
-            Contract.Invariant(_solution != null);
+            Contract.Invariant(Solution != null);
         }
     }
 }

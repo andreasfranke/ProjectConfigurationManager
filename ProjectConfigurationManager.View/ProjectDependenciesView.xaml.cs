@@ -1,10 +1,14 @@
 ﻿namespace tomenglertde.ProjectConfigurationManager.View
 {
+    using System.Globalization;
     using System.Linq;
     using System.Windows;
     using System.Windows.Controls;
     using System.Windows.Input;
+    using System.Windows.Markup;
     using System.Windows.Threading;
+
+    using JetBrains.Annotations;
 
     using TomsToolbox.Core;
     using TomsToolbox.Desktop;
@@ -17,24 +21,26 @@
     [DataTemplate(typeof(ProjectDependenciesViewModel))]
     public partial class ProjectDependenciesView
     {
+        [CanBeNull, ItemNotNull]
         private TreeViewItem[] _ancestors;
 
         public ProjectDependenciesView()
         {
             InitializeComponent();
+            Language = XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag);
         }
 
-        private void TreeViewItem_Expanded(object sender, RoutedEventArgs e)
+        private void TreeViewItem_Expanded([NotNull] object sender, [NotNull] RoutedEventArgs e)
         {
             ExpandItems(sender, true);
         }
 
-        private void TreeViewItem_Collapsed(object sender, RoutedEventArgs e)
+        private void TreeViewItem_Collapsed([NotNull] object sender, [NotNull] RoutedEventArgs e)
         {
             ExpandItems(sender, false);
         }
 
-        private void ExpandItems(object sender, bool isExpanded)
+        private void ExpandItems([NotNull] object sender, bool isExpanded)
         {
             if (!Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
                 return;
@@ -61,6 +67,7 @@
 
             treeViewItem.VisualDescendants()
                 .OfType<TreeViewItem>()
+                // ReSharper disable once PossibleNullReferenceException
                 .ForEach(i => dispatcher.BeginInvoke(DispatcherPriority.Input, () => i.IsExpanded = isExpanded));
 
             dispatcher.BeginInvoke(DispatcherPriority.Background, () => _ancestors = null);

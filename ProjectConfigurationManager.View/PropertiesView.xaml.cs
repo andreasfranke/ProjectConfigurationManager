@@ -4,14 +4,19 @@
     using System.Collections.Generic;
     using System.ComponentModel.Composition;
     using System.ComponentModel.Composition.Hosting;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Windows;
     using System.Windows.Controls;
+    using System.Windows.Markup;
 
     using DataGridExtensions;
+
+    using JetBrains.Annotations;
 
     using tomenglertde.ProjectConfigurationManager.Model;
 
@@ -25,10 +30,11 @@
     [DataTemplate(typeof(PropertiesViewModel))]
     public partial class PropertiesView
     {
+        [NotNull]
         private readonly ITracer _tracer;
 
         [ImportingConstructor]
-        public PropertiesView(ExportProvider exportProvider, ITracer tracer)
+        public PropertiesView([NotNull] ExportProvider exportProvider, [NotNull] ITracer tracer)
         {
             Contract.Requires(exportProvider != null);
             Contract.Requires(tracer != null);
@@ -37,16 +43,17 @@
             _tracer = tracer;
 
             InitializeComponent();
+            Language = XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag);
         }
 
-        private static bool FilterPredicate(ProjectConfiguration item, IEnumerable<string> selectedGuids)
+        private static bool FilterPredicate([CanBeNull] ProjectConfiguration item, [NotNull, ItemNotNull] IEnumerable<string> selectedGuids)
         {
             Contract.Requires(selectedGuids != null);
 
             return (item != null) && item.Project.ProjectTypeGuids.All(guid => selectedGuids.Contains(guid, StringComparer.OrdinalIgnoreCase));
         }
 
-        private void ProjectTypeGuids_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void ProjectTypeGuids_SelectionChanged([NotNull] object sender, [NotNull] SelectionChangedEventArgs e)
         {
             Contract.Requires(sender != null);
 
@@ -54,10 +61,12 @@
 
             var selectedGuids = listBox.SelectedItems.OfType<string>().ToArray();
 
-            DataGridFilter.SetGlobalFilter(DataGrid, item => FilterPredicate(item as ProjectConfiguration, selectedGuids));
+            var dataGrid = DataGrid;
+            Contract.Assume(dataGrid != null);
+            DataGridFilter.SetGlobalFilter(dataGrid, item => FilterPredicate(item as ProjectConfiguration, selectedGuids));
         }
 
-        private void ProjectTypeGuids_Loaded(object sender, RoutedEventArgs e)
+        private void ProjectTypeGuids_Loaded([NotNull] object sender, [NotNull] RoutedEventArgs e)
         {
             Contract.Requires(sender != null);
 
@@ -66,7 +75,7 @@
             listBox.BeginInvoke(() => listBox.SelectAll());
         }
 
-        private void ConfirmedCommandConverter_Error(object sender, ErrorEventArgs e)
+        private void ConfirmedCommandConverter_Error([NotNull] object sender, [NotNull] ErrorEventArgs e)
         {
             var exception = e.GetException();
             if (exception == null)
@@ -75,13 +84,14 @@
             _tracer.TraceError(exception);
         }
 
-        private void ConfirmedCommandConverter_OnExecuting(object sender, ConfirmedCommandEventArgs e)
+        private void ConfirmedCommandConverter_OnExecuting([NotNull] object sender, [NotNull] ConfirmedCommandEventArgs e)
         {
             WaitCursor.StartLocal(this);
         }
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_tracer != null);

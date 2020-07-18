@@ -4,15 +4,17 @@
     using System.Diagnostics.Contracts;
     using System.Globalization;
 
+    using JetBrains.Annotations;
+
     public interface ITracer
     {
-        void TraceError(string value);
-        void WriteLine(string value);
+        void TraceError([CanBeNull] string value);
+        void WriteLine([CanBeNull] string value);
     }
 
     public static class TracerExtensions
     {
-        public static void TraceError(this ITracer tracer, string format, params object[] args)
+        public static void TraceError([NotNull] this ITracer tracer, [NotNull] string format, [NotNull, ItemNotNull] params object[] args)
         {
             Contract.Requires(tracer != null);
             Contract.Requires(format != null);
@@ -20,7 +22,7 @@
             tracer.TraceError(string.Format(CultureInfo.CurrentCulture, format, args));
         }
 
-        public static void WriteLine(this ITracer tracer, string format, params object[] args)
+        public static void WriteLine([NotNull] this ITracer tracer, [NotNull] string format, [NotNull, ItemNotNull] params object[] args)
         {
             Contract.Requires(tracer != null);
             Contract.Requires(format != null);
@@ -28,7 +30,7 @@
             tracer.WriteLine(string.Format(CultureInfo.CurrentCulture, format, args));
         }
 
-        public static void TraceError(this ITracer tracer, Exception ex)
+        public static void TraceError([NotNull] this ITracer tracer, [NotNull] Exception ex)
         {
             Contract.Requires(tracer != null);
             Contract.Requires(ex != null);

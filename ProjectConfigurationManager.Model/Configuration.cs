@@ -1,28 +1,33 @@
 ﻿namespace tomenglertde.ProjectConfigurationManager.Model
 {
     using System;
-    using System.Collections.Generic;
+    using System.Collections.Immutable;
+    using System.ComponentModel;
     using System.ComponentModel.Composition;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.IO;
 
+    using JetBrains.Annotations;
+
     using Newtonsoft.Json;
 
-    using TomsToolbox.Desktop;
-
     [Export]
-    public class Configuration : ObservableObjectBase
+    public sealed class Configuration : INotifyPropertyChanged
     {
-        private readonly ITracer _tracer;
         private const string FileName = "config.json";
+
+        [NotNull]
+        private readonly ITracer _tracer;
+        [NotNull]
         private static readonly string _directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "tom-englert.de", "ProjectConfigurationManager");
 
+        [NotNull]
         private readonly string _filePath;
-        private IDictionary<string, string[]> _propertyColumnOrder;
 
         [ImportingConstructor]
-        public Configuration(ITracer tracer)
+        public Configuration([NotNull] ITracer tracer)
         {
             Contract.Requires(tracer != null);
             Contract.Assume(!string.IsNullOrEmpty(_directory));
@@ -54,20 +59,10 @@
         /// <value>
         /// The property column order, i.e. all column names by group in display order.
         /// </value>
-        public IDictionary<string, string[]> PropertyColumnOrder
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IDictionary<string, string[]>>() != null);
-                return _propertyColumnOrder ?? (_propertyColumnOrder = new Dictionary<string, string[]>());
-            }
-            set
-            {
-                SetProperty(ref _propertyColumnOrder, value);
-            }
-        }
+        [CanBeNull]
+        public ImmutableDictionary<string, string[]> PropertyColumnOrder { get; set; }
 
-        public void Save()
+        private void Save()
         {
             try
             {
@@ -79,11 +74,21 @@
             }
         }
 
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        [UsedImplicitly]
+        private void OnPropertyChanged([NotNull] string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_tracer != null);
+            Contract.Invariant(_filePath != null);
         }
     }
 }

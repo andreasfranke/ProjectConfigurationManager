@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.ComponentModel.Composition;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Globalization;
@@ -12,27 +13,22 @@
     using System.Windows.Data;
     using System.Windows.Media;
 
+    using JetBrains.Annotations;
+
     using TomsToolbox.Core;
 
     [Export]
-    public class CellToBackgroundBrushConverter : IValueConverter, IMultiValueConverter
+    public sealed class CellToBackgroundBrushConverter : IValueConverter, IMultiValueConverter
     {
-        private readonly Dictionary<string, Brush> _mappingCache = new Dictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+        [NotNull]
+        private readonly ThemeManager _themeManager;
+        [NotNull]
+        private readonly Dictionary<string, Color> _mappingCache = new Dictionary<string, Color>(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly Brush[] _brushes =
+        public CellToBackgroundBrushConverter([NotNull] ThemeManager themeManager)
         {
-            Brushes.Aquamarine,
-            Brushes.Aqua,
-            Brushes.BlanchedAlmond,
-            Brushes.Gold,
-            Brushes.LightBlue,
-            Brushes.LightGreen,
-            Brushes.LightPink,
-            Brushes.LightSalmon,
-            Brushes.LightSeaGreen,
-            Brushes.Thistle,
-            Brushes.Turquoise
-        };
+            _themeManager = themeManager;
+        }
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
@@ -48,15 +44,18 @@
 
             var text = GetColumnText(column, dataContext);
             if (text == null)
-                return Brushes.LightGray;
+                return _themeManager.IsDarkTheme ? Brushes.DimGray : Brushes.LightGray;
 
             if (string.IsNullOrEmpty(text))
                 return Brushes.Transparent;
 
-            return _mappingCache.ForceValue(text, GetNextBrush);
+            var color = _mappingCache.ForceValue(text, GetNextColor);
+
+            return new SolidColorBrush(color);
         }
 
-        private static string GetColumnText(DataGridColumn column, object dataContext)
+        [CanBeNull]
+        private static string GetColumnText([NotNull] DataGridColumn column, [NotNull] object dataContext)
         {
             Contract.Requires(column != null);
             Contract.Requires(dataContext != null);
@@ -104,13 +103,14 @@
         }
 
         [ContractVerification(false)]
-        private Brush GetNextBrush(string text)
+        private Color GetNextColor([CanBeNull] string text)
         {
-            return _brushes[_mappingCache.Count % _brushes.Length];
+            return BackgroundColors.GetColor(_mappingCache.Count, _themeManager.IsDarkTheme);
         }
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_mappingCache != null);

@@ -3,71 +3,132 @@
     using System;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
-    using System.Diagnostics.CodeAnalysis;
-    using System.Diagnostics.Contracts;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Windows.Threading;
     using System.Xml;
     using System.Xml.Linq;
 
+    using JetBrains.Annotations;
+
     using Microsoft.VisualStudio.Shell.Interop;
+
+    using Throttle;
 
     using TomsToolbox.Core;
     using TomsToolbox.Desktop;
 
-    class ProjectFile
+    internal sealed class ProjectFile
     {
         private const string ConditionAttributeName = "Condition";
 
-        private static readonly XNamespace _xmlns = XNamespace.Get(@"http://schemas.microsoft.com/developer/msbuild/2003");
-        private static readonly XName _propertyGroupNodeName = _xmlns.GetName("PropertyGroup");
-
+        [NotNull]
         private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
-        private readonly DispatcherThrottle _deferredSaveThrottle;
+        [NotNull]
         private readonly Solution _solution;
+        [NotNull]
         private readonly Project _project;
         private readonly Guid _projectGuid;
 
+        [CanBeNull]
         private XDocument _document;
-        private ProjectPropertyGroup[] _propertyGroups;
+        [CanBeNull, ItemNotNull]
+        private IList<IPropertyGroup> _propertyGroups;
 
-        public ProjectFile(Solution solution, Project project)
+        [NotNull]
+        private XName PropertyGroupNodeName => DefaultNamespace.GetName("PropertyGroup");
+        [NotNull]
+        private XName ItemDefinitionGroupNodeName => DefaultNamespace.GetName("ItemDefinitionGroup");
+
+        public ProjectFile([NotNull] Solution solution, [NotNull] Project project)
         {
-            Contract.Requires(solution != null);
-            Contract.Requires(project != null);
-
-            _deferredSaveThrottle = new DispatcherThrottle(SaveProjectFile);
             _solution = solution;
             _project = project;
 
             FileTime = File.GetLastWriteTime(project.FullName);
 
-            _projectGuid = GetProjectGuid(solution, project.UniqueName);
+            _projectGuid = solution.GetProjectGuid(project.ProjectHierarchy);
         }
 
-        public IEnumerable<IProjectPropertyGroup> GetPropertyGroups(string configuration, string platform)
+        [NotNull, ItemNotNull]
+        public IEnumerable<IPropertyGroup> GetPropertyGroups([CanBeNull] string configuration, [CanBeNull] string platform)
         {
-            Contract.Ensures(Contract.Result<IEnumerable<IProjectPropertyGroup>>() != null);
-            return PropertyGroups.Where(group => group.MatchesConfiguration(configuration, platform));
+            return PropertyGroups
+                .Where(group => group.MatchesConfiguration(configuration, platform));
         }
 
-        public IProjectProperty CreateProperty(string propertyName, string configuration, string platform)
+        [CanBeNull]
+        public IProjectProperty CreateProperty([NotNull] string propertyName, [CanBeNull] string configuration, [CanBeNull] string platform)
         {
-            Contract.Requires(propertyName != null);
+            var parts = propertyName.Split('.');
 
-            var group = GetPropertyGroups(configuration, platform).FirstOrDefault();
+            if (parts.Length == 2)
+            {
+                var itemGroupName = parts[0];
+                propertyName = parts[1];
 
-            return group?.AddProperty(propertyName);
+                var group = GetPropertyGroups(configuration, platform)
+                    .OfType<IItemDefinitionGroup>()
+                    .FirstOrDefault();
+
+                // ReSharper disable AssignNullToNotNullAttribute
+                group = group ?? CreateNewPropertyGroup(configuration, platform, ItemDefinitionGroupNodeName, element => new ItemDefinitionGroup(this, element));
+
+                return group?.AddProperty(itemGroupName, propertyName);
+                // ReSharper enable AssignNullToNotNullAttribute
+            }
+            else
+            {
+                var group = GetPropertyGroups(configuration, platform)
+                    .OfType<IProjectPropertyGroup>()
+                    .FirstOrDefault();
+
+                group = group ?? CreateNewPropertyGroup(configuration, platform, PropertyGroupNodeName, element => new ProjectPropertyGroup(this, element));
+
+                return group?.AddProperty(propertyName);
+            }
         }
 
-        public void DeleteProperty(string propertyName, string configuration, string platform)
+        [CanBeNull]
+        private T CreateNewPropertyGroup<T>([CanBeNull] string configuration, [CanBeNull] string platform, [NotNull] XName nodeName, [NotNull] Func<XElement, T> groupFactory)
+            where T : class, IPropertyGroup
         {
-            Contract.Requires(propertyName != null);
+            var propertyGroups = _propertyGroups;
 
+            if (propertyGroups == null)
+                return null;
+
+            var lastGroupNode = Root
+                .Elements(nodeName)
+                .LastOrDefault();
+
+            if (lastGroupNode == null)
+                return null;
+
+            var newGroupNode = new XElement(nodeName, new XText("\n  "));
+
+            if (!string.IsNullOrEmpty(configuration) && !string.IsNullOrEmpty(platform))
+            {
+                var conditionExpression = string.Format(CultureInfo.InvariantCulture, "'$(Configuration)|$(Platform)'=='{0}|{1}'", configuration, platform.Replace(" ", ""));
+                newGroupNode.Add(new XAttribute(ConditionAttributeName, conditionExpression));
+            }
+
+            lastGroupNode.AddAfterSelf(newGroupNode);
+            newGroupNode.AddBeforeSelf(new XText("\n  "));
+
+            var group = groupFactory(newGroupNode);
+
+            propertyGroups.Add(group);
+
+            return group;
+        }
+
+        public void DeleteProperty([NotNull] string propertyName, [CanBeNull] string configuration, [CanBeNull] string platform)
+        {
             var item = GetPropertyGroups(configuration, platform)
                 .SelectMany(group => group.Properties)
-                .FirstOrDefault(property => property.Name == propertyName);
+                .FirstOrDefault(property => property?.Name == propertyName);
 
             item?.Delete();
         }
@@ -88,40 +149,30 @@
                 return true;
 
             var files = new[] { _project.FullName };
-            uint editVerdict;
-            uint moreInfo;
 
-            return (0 == service.QueryEditFiles(0, files.Length, files, null, null, out editVerdict, out moreInfo))
+            return (0 == service.QueryEditFiles(0, files.Length, files, null, null, out var editVerdict, out var _))
                 && (editVerdict == (uint)tagVSQueryEditResult.QER_EditOK);
         }
 
-        internal bool HasConfiguration(string configuration, string platform)
+        internal void DeleteConfiguration([CanBeNull] string configuration, [CanBeNull] string platform)
         {
-            return PropertyGroups.Any(group => group.MatchesConfiguration(configuration, platform));
-        }
+            var groupsToDelete = PropertyGroups
+                .Where(group => group.MatchesConfiguration(configuration, platform))
+                .ToArray();
 
-        internal void DeleteConfiguration(string configuration, string platform)
-        {
-            var groupsToDelete = PropertyGroups.Where(group => group.MatchesConfiguration(configuration, platform)).ToArray();
+            _propertyGroups?.RemoveRange(groupsToDelete);
 
-            _propertyGroups = PropertyGroups.Except(groupsToDelete).ToArray();
-
-            groupsToDelete.ForEach(group => group.Delete());
+            groupsToDelete.ForEach(group => group?.Delete());
 
             SaveChanges();
         }
 
+        [Throttled(typeof(DispatcherThrottle))]
         private void SaveChanges()
-        {
-            _deferredSaveThrottle.Tick();
-        }
-
-        private void SaveProjectFile()
         {
             IsSaving = true;
 
             var outputFileName = _project.FullName;
-            var projectName = _project.Name;
 
             _dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
             {
@@ -132,12 +183,16 @@
             var projectGuid = _projectGuid;
             var solution = _solution.GetService(typeof(SVsSolution)) as IVsSolution4;
 
-            Contract.Assume(solution != null);
-
             if (!_project.IsSaved)
                 return;
 
-            solution.UnloadProject(ref projectGuid, (int)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
+            var reloadProject = false;
+
+            if (_project.IsLoaded)
+            {
+                reloadProject = true;
+                solution?.UnloadProject(ref projectGuid, (int)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
+            }
 
             var settings = new XmlWriterSettings
             {
@@ -152,22 +207,22 @@
                 Document.WriteTo(writer);
             }
 
-            var result = solution.ReloadProject(ref projectGuid);
+            if (!reloadProject)
+                return;
+
+            var result = solution?.ReloadProject(ref projectGuid);
 
             if (result == 0)
                 return;
 
-            _solution.Tracer.TraceError("Loading project {0} failed after saving - reverting changes.", projectName);
+            _solution.Tracer.TraceError("Loading project {0} failed after saving - reverting changes.", outputFileName);
             File.WriteAllBytes(outputFileName, backup);
 
             ReloadProject(_dispatcher, solution, 0, projectGuid);
         }
 
-        private static void ReloadProject(Dispatcher dispatcher, IVsSolution4 solution, int retry, Guid projectGuid)
+        private static void ReloadProject([NotNull] Dispatcher dispatcher, [NotNull] IVsSolution4 solution, int retry, Guid projectGuid)
         {
-            Contract.Requires(dispatcher != null);
-            Contract.Requires(solution != null);
-
             var hr = solution.ReloadProject(ref projectGuid);
             if (hr == 0)
                 return;
@@ -176,23 +231,6 @@
             {
                 dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => ReloadProject(dispatcher, solution, retry + 1, projectGuid));
             }
-        }
-
-        private static Guid GetProjectGuid(IServiceProvider serviceProvider, string uniqueName)
-        {
-            Contract.Requires(serviceProvider != null);
-            Contract.Requires(uniqueName != null);
-
-            var solution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
-            Contract.Assume(solution != null);
-
-            IVsHierarchy projectHierarchy;
-            solution.GetProjectOfUniqueName(uniqueName, out projectHierarchy);
-            Contract.Assume(projectHierarchy != null);
-
-            Guid projectGuid;
-            solution.GetGuidOfProject(projectHierarchy, out projectGuid);
-            return projectGuid;
         }
 
         private bool IsWritable
@@ -216,132 +254,153 @@
             }
         }
 
-        private XDocument Document
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<XDocument>() != null);
-                return _document ?? (_document = XDocument.Load(_project.FullName, LoadOptions.PreserveWhitespace));
-            }
-        }
+        [NotNull]
+        private XDocument Document => _document ?? (_document = XDocument.Load(_project.FullName, LoadOptions.PreserveWhitespace));
 
-        private IEnumerable<ProjectPropertyGroup> PropertyGroups
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IEnumerable<ProjectPropertyGroup>>() != null);
-                return _propertyGroups ?? (_propertyGroups = GeneratePropertyGroups());
-            }
-        }
+        [NotNull]
+        // ReSharper disable once AssignNullToNotNullAttribute
+        private XElement Root => Document.Root;
 
-        private ProjectPropertyGroup[] GeneratePropertyGroups()
+        [NotNull]
+        private XNamespace DefaultNamespace => Root.GetDefaultNamespace();
+
+        [NotNull, ItemNotNull]
+        internal IEnumerable<IPropertyGroup> PropertyGroups => _propertyGroups ?? (_propertyGroups = GeneratePropertyGroups());
+
+        [NotNull, ItemNotNull]
+        private IList<IPropertyGroup> GeneratePropertyGroups()
         {
-            return Document.Descendants(_propertyGroupNodeName)
-                .Where(node => node.Parent?.Name.LocalName == "Project")
+            var projectPropertyGroups = Root.Elements(PropertyGroupNodeName)
                 .Select(node => new ProjectPropertyGroup(this, node))
-                .ToArray();
+                .Cast<IPropertyGroup>();
+
+            var itemDefinitionGroups = Root.Elements(ItemDefinitionGroupNodeName)
+                .Select(definitionNode => new ItemDefinitionGroup(this, definitionNode))
+                .Cast<IPropertyGroup>();
+
+            return projectPropertyGroups
+                .Concat(itemDefinitionGroups)
+                .ToList();
         }
 
-        private class ProjectPropertyGroup : IProjectPropertyGroup
+        private abstract class PropertyGroup : IPropertyGroup
         {
-            private readonly ProjectFile _projectFile;
-            private readonly XElement _propertyGroupNode;
-            private readonly ObservableCollection<ProjectProperty> _properties;
-
-            public ProjectPropertyGroup(ProjectFile projectFile, XElement propertyGroupNode)
+            protected PropertyGroup([NotNull] ProjectFile projectFile, [NotNull] XElement node)
             {
-                Contract.Requires(projectFile != null);
-                Contract.Requires(propertyGroupNode != null);
+                ProjectFile = projectFile;
+                Node = node;
 
-                _projectFile = projectFile;
-                _propertyGroupNode = propertyGroupNode;
-
-                _properties = new ObservableCollection<ProjectProperty>(
-                    _propertyGroupNode.Elements()
-                        .Where(node => node.GetAttribute(ConditionAttributeName) == null)
-                        .Select(node => new ProjectProperty(projectFile, node)));
+                Properties = new ReadOnlyObservableCollection<IProjectProperty>(Items);
             }
 
-            public IEnumerable<IProjectProperty> Properties => _properties;
+            [NotNull]
+            protected ProjectFile ProjectFile { get; }
+            [NotNull]
+            protected XElement Node { get; }
+            [NotNull]
+            protected XNamespace Xmlns => Node.Document?.Root?.GetDefaultNamespace() ?? XNamespace.None;
+
+            public IEnumerable<IProjectProperty> Properties { get; }
+
+            public string Label => Node.Attribute("Label")?.Value;
+
+            [NotNull]
+            protected ObservableCollection<IProjectProperty> Items { get; } = new ObservableCollection<IProjectProperty>();
+
+            public string ConditionExpression => Node.GetAttribute(ConditionAttributeName);
+
+            public void Delete()
+            {
+                Node.RemoveSelfAndWhitespace();
+            }
+        }
+
+        private sealed class ProjectPropertyGroup : PropertyGroup, IProjectPropertyGroup
+        {
+            public ProjectPropertyGroup([NotNull] ProjectFile projectFile, [NotNull] XElement node)
+                : base(projectFile, node)
+            {
+                Items.AddRange(EnumerateProperties(projectFile, node));
+            }
+
+            [NotNull]
+            private IEnumerable<ProjectProperty> EnumerateProperties([NotNull] ProjectFile projectFile, [NotNull] XElement groupNode)
+            {
+                return groupNode.Elements()
+                    .Where(node => node != null && node.GetAttribute(ConditionAttributeName) == null)
+                    .Select(propertyNode => new ProjectProperty(projectFile, this, propertyNode, propertyNode.Name.LocalName));
+            }
 
             public IProjectProperty AddProperty(string propertyName)
             {
-                var node = new XElement(_xmlns.GetName(propertyName));
+                var propertyNode = new XElement(Xmlns.GetName(propertyName));
 
-                var lastNode = _propertyGroupNode.LastNode;
+                Node.Add(propertyNode);
 
-                if (lastNode?.NodeType == XmlNodeType.Text)
-                {
-                    var lastDelimiter = lastNode.PreviousNode?.PreviousNode as XText;
-                    var whiteSpace = new XText(lastDelimiter?.Value ?? "\n    ");
-                    lastNode.AddBeforeSelf(whiteSpace, node);
-                }
-                else
-                {
-                    _propertyGroupNode.Add(node);
-                }
+                var property = new ProjectProperty(ProjectFile, this, propertyNode, propertyNode.Name.LocalName);
 
-                var property = new ProjectProperty(_projectFile, node);
+                Items.Add(property);
 
-                _properties.Add(property);
+                return property;
+            }
+        }
+
+        private sealed class ItemDefinitionGroup : PropertyGroup, IItemDefinitionGroup
+        {
+            public ItemDefinitionGroup([NotNull] ProjectFile projectFile, [NotNull] XElement node)
+                : base(projectFile, node)
+            {
+                Items.AddRange(EnumerateProperties(projectFile, node));
+            }
+
+            [NotNull]
+            private IEnumerable<ProjectProperty> EnumerateProperties([NotNull] ProjectFile projectFile, [NotNull] XElement groupNode)
+            {
+                // ReSharper disable PossibleNullReferenceException
+                return groupNode.Elements()
+                    .SelectMany(propertyGroupNode => propertyGroupNode
+                        .Elements()
+                        .Select(propertyNode => new ProjectProperty(projectFile, this, propertyNode, propertyGroupNode.Name.LocalName + "." + propertyNode.Name.LocalName))
+                    );
+                // ReSharper restore PossibleNullReferenceException
+            }
+
+            public IProjectProperty AddProperty(string itemGroupName, string propertyName)
+            {
+                var propertyNode = new XElement(Xmlns.GetName(propertyName));
+
+                var groupNode = Node.Elements().FirstOrDefault(element => element?.Name.LocalName == itemGroupName) ?? Node.AddElement(new XElement(Xmlns.GetName(itemGroupName)));
+
+                groupNode.AddElement(propertyNode);
+
+                var property = new ProjectProperty(ProjectFile, this, propertyNode, groupNode.Name.LocalName + "." + propertyNode.Name.LocalName);
+
+                Items.Add(property);
 
                 return property;
             }
 
-            public bool MatchesConfiguration(string configuration, string platform)
-            {
-                var conditionExpression = _propertyGroupNode.GetAttribute(ConditionAttributeName);
-
-                if (string.IsNullOrEmpty(conditionExpression))
-                    return string.IsNullOrEmpty(configuration) && string.IsNullOrEmpty(platform);
-
-                if (string.IsNullOrEmpty(configuration))
-                    return false;
-
-                conditionExpression = conditionExpression.Replace(" ", "");
-
-                if (!conditionExpression.Contains("$(Configuration)") || !conditionExpression.Contains("=="))
-                    return false;
-
-                if (!conditionExpression.Contains(configuration))
-                    return false;
-
-                if (!conditionExpression.Contains("$(Platform)"))
-                    return platform == "Any CPU";
-
-                return (platform != null) && conditionExpression.Contains(platform.Replace(" ", ""));
-            }
-
-            public void Delete()
-            {
-                _propertyGroupNode.RemoveSelfAndWhitespace();
-            }
-
-            [ContractInvariantMethod]
-            [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-            private void ObjectInvariant()
-            {
-                Contract.Invariant(_projectFile != null);
-                Contract.Invariant(_propertyGroupNode != null);
-                Contract.Invariant(_properties != null);
-            }
         }
 
-        private class ProjectProperty : IProjectProperty
+        private sealed class ProjectProperty : IProjectProperty
         {
+            [NotNull]
             private readonly ProjectFile _projectFile;
+            [NotNull]
             private readonly XElement _node;
 
-            public ProjectProperty(ProjectFile projectFile, XElement node)
+            public ProjectProperty([NotNull] ProjectFile projectFile, [NotNull] IPropertyGroup group, [NotNull] XElement node, [NotNull] string name)
             {
-                Contract.Requires(projectFile != null);
-                Contract.Requires(node != null);
-
                 _projectFile = projectFile;
                 _node = node;
+
+                Group = group;
+                Name = name;
             }
 
-            public string Name => _node.Name.LocalName;
+            public string Name { get; }
+
+            public IPropertyGroup Group { get; }
 
             public string Value
             {
@@ -365,24 +424,6 @@
                 _node.RemoveSelfAndWhitespace();
                 _projectFile.SaveChanges();
             }
-
-            [ContractInvariantMethod]
-            [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-            private void ObjectInvariant()
-            {
-                Contract.Invariant(_projectFile != null);
-                Contract.Invariant(_node != null);
-            }
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_project != null);
-            Contract.Invariant(_solution != null);
-            Contract.Invariant(_dispatcher != null);
-            Contract.Invariant(_deferredSaveThrottle != null);
         }
     }
 }

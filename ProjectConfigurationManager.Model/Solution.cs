@@ -4,148 +4,99 @@
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
     using System.ComponentModel.Composition;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
-    using System.Diagnostics.Contracts;
     using System.IO;
     using System.Linq;
     using System.Threading;
+    using System.Windows.Input;
     using System.Windows.Threading;
+
+    using JetBrains.Annotations;
+
+    using Microsoft.VisualStudio;
+    using Microsoft.VisualStudio.Shell.Interop;
+
+    using Throttle;
 
     using TomsToolbox.Core;
     using TomsToolbox.Desktop;
     using TomsToolbox.ObservableCollections;
 
     [Export]
-    public class Solution : ObservableObject, IServiceProvider
+    public sealed class Solution : ObservableObject, IServiceProvider
     {
-        private readonly DispatcherThrottle _deferredUpdateThrottle;
-        private readonly ITracer _tracer;
+        [NotNull]
         private readonly IVsServiceProvider _serviceProvider;
+        [NotNull]
         private readonly PerformanceTracer _performanceTracer;
 
-        private readonly ObservableCollection<Project> _projects = new ObservableCollection<Project>();
-        private readonly ObservableCollection<SolutionConfiguration> _configurations = new ObservableCollection<SolutionConfiguration>();
-        private readonly IObservableCollection<ProjectConfiguration> _specificProjectConfigurations;
-        private readonly IObservableCollection<ProjectConfiguration> _projectConfigurations;
-        private readonly IObservableCollection<SolutionContext> _solutionContexts;
-        private readonly ObservableCollection<ProjectPropertyName> _projectProperties = new ObservableCollection<ProjectPropertyName>();
-        private readonly ObservableCollection<string> _projectTypeGuids = new ObservableCollection<string>();
-
-        private readonly EnvDTE.SolutionEvents _solutionEvents;
-
+        [SuppressMessage("Microsoft.Performance", "CA1823:AvoidUnusedPrivateFields")]
+        [CanBeNull, UsedImplicitly]
+        private readonly EnvDTE.SolutionEvents _solutionEvents; // => need to hold a ref to events!
+        [CanBeNull]
         private FileSystemWatcher _fileSystemWatcher;
 
         [ImportingConstructor]
-        public Solution(ITracer tracer, IVsServiceProvider serviceProvider, PerformanceTracer performanceTracer)
+        public Solution([NotNull] ITracer tracer, [NotNull] IVsServiceProvider serviceProvider, [NotNull] PerformanceTracer performanceTracer)
         {
-            Contract.Requires(tracer != null);
-            Contract.Requires(serviceProvider != null);
-            Contract.Requires(performanceTracer != null);
-
-            _deferredUpdateThrottle = new DispatcherThrottle(DispatcherPriority.ApplicationIdle, Update);
-
-            _tracer = tracer;
+            Tracer = tracer;
             _serviceProvider = serviceProvider;
             _performanceTracer = performanceTracer;
 
-            _specificProjectConfigurations = _projects.ObservableSelectMany(prj => prj.SpecificProjectConfigurations);
-            _solutionContexts = SolutionConfigurations.ObservableSelectMany(cfg => cfg.Contexts);
-            _projectConfigurations = _projects.ObservableSelectMany(prj => prj.ProjectConfigurations);
+            SpecificProjectConfigurations = Projects.ObservableSelectMany(prj => prj.SpecificProjectConfigurations);
+            ProjectConfigurations = Projects.ObservableSelectMany(prj => prj.ProjectConfigurations);
 
-            _solutionEvents = Dte?.Events?.SolutionEvents;
-            if (_solutionEvents != null)
+            var solutionEvents = Dte?.Events?.SolutionEvents;
+            if (solutionEvents != null)
             {
-                _solutionEvents.Opened += () => Solution_Changed("Solution opened");
-                _solutionEvents.AfterClosing += () => Solution_Changed("Solution after closing");
-                _solutionEvents.ProjectAdded += _ => Solution_Changed("Project added");
-                _solutionEvents.ProjectRemoved += _ => Solution_Changed("Project removed");
-                _solutionEvents.ProjectRenamed += (_, __) => Solution_Changed("Project renamed");
+                solutionEvents.Opened += () => OnSolutionChanged("Solution opened");
+                solutionEvents.AfterClosing += () => OnSolutionChanged("Solution after closing");
+                solutionEvents.ProjectAdded += _ => OnSolutionChanged("Project added");
+                solutionEvents.ProjectRemoved += _ => OnSolutionChanged("Project removed");
+                solutionEvents.ProjectRenamed += (_, __) => OnSolutionChanged("Project renamed");
             }
+
+            _solutionEvents = solutionEvents;
+
+            Update(0);
+
+            CommandManager.RequerySuggested += (_, __) => Projects.ForEach(proj => proj?.InvalidateState());
+        }
+
+        public event EventHandler Changed;
+
+        public event EventHandler<FileSystemEventArgs> FileChanged;
+
+        private void OnSolutionChanged([NotNull] string action)
+        {
+            Tracer.WriteLine(action);
 
             Update();
         }
 
-        private void Solution_Changed(string action)
-        {
-            if (_projects.Any(p => p.IsSaving))
-                return;
+        [NotNull, ItemNotNull]
+        public ObservableCollection<Project> Projects { get; } = new ObservableCollection<Project>();
 
-            _tracer.WriteLine(action);
-            _deferredUpdateThrottle.Tick();
-        }
+        [NotNull, ItemNotNull]
+        public ObservableCollection<SolutionConfiguration> SolutionConfigurations { get; } = new ObservableCollection<SolutionConfiguration>();
 
-        public ObservableCollection<Project> Projects
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ObservableCollection<Project>>() != null);
-                return _projects;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public IObservableCollection<ProjectConfiguration> ProjectConfigurations { get; }
 
-        public ObservableCollection<SolutionConfiguration> SolutionConfigurations
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ObservableCollection<SolutionConfiguration>>() != null);
-                return _configurations;
-            }
-        }
+        [NotNull]
+        public ITracer Tracer { get; }
 
-        public IObservableCollection<SolutionContext> SolutionContexts
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IObservableCollection<SolutionContext>>() != null);
-                return _solutionContexts;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public IObservableCollection<ProjectConfiguration> SpecificProjectConfigurations { get; }
 
-        public IObservableCollection<ProjectConfiguration> ProjectConfigurations
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IObservableCollection<ProjectConfiguration>>() != null);
-                return _projectConfigurations;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public ObservableCollection<ProjectPropertyName> ProjectProperties { get; } = new ObservableCollection<ProjectPropertyName>();
 
-        public ITracer Tracer
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ITracer>() != null);
-                return _tracer;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public ObservableCollection<string> ProjectTypeGuids { get; } = new ObservableCollection<string>();
 
-        public IObservableCollection<ProjectConfiguration> SpecificProjectConfigurations
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IObservableCollection<ProjectConfiguration>>() != null);
-                return _specificProjectConfigurations;
-            }
-        }
-
-        public ObservableCollection<ProjectPropertyName> ProjectProperties
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ObservableCollection<ProjectPropertyName>>() != null);
-                return _projectProperties;
-            }
-        }
-
-        public ObservableCollection<string> ProjectTypeGuids
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<ObservableCollection<string>>() != null);
-                return _projectTypeGuids;
-            }
-        }
-
+        [CanBeNull]
         public string SolutionFolder
         {
             get
@@ -159,23 +110,26 @@
                 }
                 catch
                 {
+                    // solution not available
                 }
 
                 return null;
             }
         }
 
-        public object GetService(Type serviceType)
+        [CanBeNull]
+        public object GetService([NotNull] Type serviceType)
         {
             return _serviceProvider.GetService(serviceType);
         }
 
+        [Throttled(typeof(DispatcherThrottle), (int)DispatcherPriority.ApplicationIdle)]
         public void Update()
         {
             Update(0);
         }
 
-        public void Update(int retry)
+        private void Update(int retry)
         {
             using (_performanceTracer.Start("Update"))
             {
@@ -183,16 +137,17 @@
                 {
                     SynchronizeCollections(retry < 3);
                     SetupFileSystemWatcher();
+                    Changed?.Invoke(this, EventArgs.Empty);
                 }
                 catch (RetryException)
                 {
-                    _tracer.WriteLine("Retry Update...");
+                    Tracer.WriteLine("Retry Update...");
                     // could not access the project file, retry later...
                     Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => Update(retry + 1));
                 }
                 catch (Exception ex)
                 {
-                    _tracer.TraceError(ex);
+                    Tracer.TraceError(ex);
                 }
             }
         }
@@ -210,7 +165,7 @@
 
                 if (solutionFolder != null)
                 {
-                    watcher = new FileSystemWatcher(solutionFolder, "*.*")
+                    watcher = new FileSystemWatcher(solutionFolder)
                     {
                         EnableRaisingEvents = true,
                         NotifyFilter = NotifyFilters.LastWrite,
@@ -224,20 +179,22 @@
             }
             catch (Exception ex)
             {
-                _tracer.TraceError(ex);
+                Tracer.TraceError(ex);
             }
         }
 
-        private void Watcher_Changed(object sender, FileSystemEventArgs e)
+        private void Watcher_Changed([NotNull] object sender, [NotNull] FileSystemEventArgs e)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, 0));
         }
 
-        private void DeferredOnWatcherChanged(FileSystemEventArgs e, int retry)
+        private void DeferredOnWatcherChanged([NotNull] FileSystemEventArgs e, int retry)
         {
             try
             {
-                var project = _projects.FirstOrDefault(prj => string.Equals(e.FullPath, prj.FullName, StringComparison.OrdinalIgnoreCase));
+                FileChanged?.Invoke(this, e);
+
+                var project = Projects.FirstOrDefault(prj => string.Equals(e.FullPath, prj.FullName, StringComparison.OrdinalIgnoreCase));
 
                 if ((project == null) || project.IsSaving || (project.FileTime == File.GetLastWriteTime(project.FullName)))
                     return;
@@ -254,7 +211,7 @@
                             throw;
 
                         // could not access the project file, retry later...
-                        Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, retry + 1));
+                        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => DeferredOnWatcherChanged(e, retry + 1));
                         return;
                     }
 
@@ -268,19 +225,19 @@
                     Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, retry + 1));
                 }
 
-                _tracer.TraceError(ex);
+                Tracer.TraceError(ex);
             }
         }
 
         private void SynchronizeCollections(bool retryOnErrors)
         {
-            _projects.SynchronizeWith(GetProjects(retryOnErrors).ToArray());
+            Projects.SynchronizeWith(GetProjects(retryOnErrors).ToArray());
 
-            _configurations.SynchronizeWith(GetConfigurations().ToArray());
+            SolutionConfigurations.SynchronizeWith(GetConfigurations().ToArray());
 
-            _projectProperties.SynchronizeWith(GetProjectProperties().ToArray());
+            ProjectProperties.SynchronizeWith(GetProjectProperties().ToArray());
 
-            _projectTypeGuids.SynchronizeWith(_projects.SelectMany(p => p.ProjectTypeGuids ?? Enumerable.Empty<string>()).ToArray());
+            ProjectTypeGuids.SynchronizeWith(Projects.SelectMany(p => p.ProjectTypeGuids).ToArray());
 
             UpdateReferences();
         }
@@ -289,179 +246,118 @@
         {
             var dependencies = new Dictionary<Project, IList<Project>>();
 
-            foreach (var project in _projects)
+            foreach (var project in Projects)
             {
-                project?.UpdateReferences();
+                project.UpdateReferences();
             }
 
-            foreach (var project in _projects)
+            foreach (var project in Projects)
             {
-                Contract.Assume(project != null);
                 foreach (var dependency in project.References)
                 {
-                    Contract.Assume(dependency != null);
                     dependencies.ForceValue(dependency, _ => new List<Project>())?.Add(project);
                 }
             }
 
-            foreach (var project in _projects)
+            foreach (var project in Projects)
             {
-                Contract.Assume(project != null);
                 var dependentProjects = dependencies.ForceValue(project, _ => new List<Project>());
-                Contract.Assume(dependentProjects != null);
+                Debug.Assert(dependentProjects != null, nameof(dependentProjects) + " != null");
                 project.ReferencedBy.SynchronizeWith(dependentProjects);
             }
         }
 
+        [NotNull, ItemNotNull]
         private IEnumerable<SolutionConfiguration> GetConfigurations()
         {
-            Contract.Ensures(Contract.Result<IEnumerable<SolutionConfiguration>>() != null);
-
             return DteSolution?.SolutionBuild?.SolutionConfigurations?.OfType<EnvDTE80.SolutionConfiguration2>()
                 .Select(item => new SolutionConfiguration(this, item)) ?? Enumerable.Empty<SolutionConfiguration>();
         }
 
+        [NotNull, ItemNotNull]
         private IEnumerable<Project> GetProjects(bool retryOnErrors)
         {
-            Contract.Ensures(Contract.Result<IEnumerable<Project>>() != null);
+            var solution = (IVsSolution)GetService(typeof(IVsSolution));
 
-            return GetDteProjects(retryOnErrors)
-                .Select(project => Project.Create(this, project, retryOnErrors, _tracer))
-                .Where(project => project != null);
-        }
-
-        private IEnumerable<EnvDTE.Project> GetDteProjects(bool retryOnErrors)
-        {
-            Contract.Ensures(Contract.Result<IEnumerable<EnvDTE.Project>>() != null);
-
-            var items = new List<EnvDTE.Project>();
-
-            GetDteProjects(DteSolution?.Projects)
-                .ForEach(project => GetProjectOrSubProjects(items, project, retryOnErrors));
-
-            return items;
-        }
-
-        private void GetProjectOrSubProjects(ICollection<EnvDTE.Project> items, EnvDTE.Project project, bool retryOnErrors)
-        {
-            Contract.Requires(items != null);
-
-            if (project == null)
-                return;
-
-            if (string.Equals(project.Kind, ItemKind.SolutionFolder, StringComparison.OrdinalIgnoreCase))
+            foreach (var projectHierarchy in GetProjectsInSolution(solution, __VSENUMPROJFLAGS.EPF_ALLINSOLUTION))
             {
-                GetSubprojects(project).ForEach(p => GetProjectOrSubProjects(items, p, retryOnErrors));
-                return;
-            }
 
-            if (string.IsNullOrEmpty(project.UniqueName))
-                return;
+                string fullName = null;
+                // ReSharper disable once SuspiciousTypeConversion.Global
+                var vsProject = projectHierarchy as IVsProject;
+                vsProject?.GetMkDocument(VSConstants.VSITEMID_ROOT, out fullName);
 
-            try
-            {
-                if (!string.IsNullOrEmpty(project.FullName))
+                if (string.IsNullOrEmpty(fullName))
                 {
-                    items.Add(project);
+                    // unloaded project?
+                    projectHierarchy.GetCanonicalName(VSConstants.VSITEMID_ROOT, out fullName);
                 }
-            }
-            catch (Exception ex)
-            {
-                if (ex is NotImplementedException)
-                    if (retryOnErrors)
-                        throw new RetryException(ex);
 
-                _tracer.TraceError("Error loading a project: " + ex.Message);
+                // Skip web projects, we can't edit them.
+                if (!Uri.TryCreate(fullName, UriKind.Absolute, out var projectUri) || !projectUri.IsFile || !File.Exists(fullName))
+                    continue;
+
+                var existing = Projects.FirstOrDefault(p => string.Equals(p.FullName, fullName, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    existing.Reload(projectHierarchy);
+                    yield return existing;
+                }
+
+                var project = Project.Create(this, fullName, projectHierarchy, retryOnErrors, Tracer);
+                if (project != null)
+                    yield return project;
             }
         }
 
-        public IEnumerable<EnvDTE.Project> GetSubprojects(EnvDTE.Project project)
+        [NotNull, ItemNotNull]
+        private static IEnumerable<IVsHierarchy> GetProjectsInSolution([CanBeNull] IVsSolution solution, __VSENUMPROJFLAGS flags)
         {
-            Contract.Ensures(Contract.Result<IEnumerable<EnvDTE.Project>>() != null);
-
-            try
-            {
-                var projectItems = project?.ProjectItems;
-
-                if (projectItems != null)
-                    return projectItems.OfType<EnvDTE.ProjectItem>().Select(item => item.SubProject);
-            }
-            catch (Exception ex)
-            {
-                _tracer.TraceError("Error loading sub projects: " + ex.Message);
-            }
-
-            return Enumerable.Empty<EnvDTE.Project>();
-        }
-
-        public IEnumerable<EnvDTE.Project> GetDteProjects(EnvDTE.Projects projects)
-        {
-            Contract.Ensures(Contract.Result<IEnumerable<EnvDTE.Project>>() != null);
-
-            if (projects == null)
+            if (solution == null)
                 yield break;
 
-            for (var i = 1; i <= projects.Count; i++)
+            var guid = Guid.Empty;
+            solution.GetProjectEnum((uint)flags, ref guid, out var enumHierarchies);
+            if (enumHierarchies == null)
+                yield break;
+
+            var hierarchy = new IVsHierarchy[1];
+            while (enumHierarchies.Next(1, hierarchy, out var fetched) == VSConstants.S_OK && fetched == 1)
             {
-                EnvDTE.Project item;
-
-                try
-                {
-                    item = projects.Item(i);
-                }
-                catch (Exception ex)
-                {
-                    _tracer.TraceError("Error loading a project: " + ex.Message);
-                    continue;
-                }
-
-                yield return item;
+                if (hierarchy.Length > 0 && hierarchy[0] != null)
+                    yield return hierarchy[0];
             }
         }
 
+        [NotNull, ItemNotNull]
+        [SuppressMessage("ReSharper", "AssignNullToNotNullAttribute")]
+        [SuppressMessage("ReSharper", "PossibleNullReferenceException")]
         private IEnumerable<ProjectPropertyName> GetProjectProperties()
         {
-            Contract.Ensures(Contract.Result<IEnumerable<ProjectPropertyName>>() != null);
-
-            return _projects
+            return Projects
                 .SelectMany(prj => ProjectConfigurations.SelectMany(cfg => cfg.Properties.Values))
-                .Select(prop => prop.Name)
-                .Distinct()
-                .Where(PropertyGroupName.IsNotProjectSpecific)
-                .Select(name => new ProjectPropertyName(name, PropertyGroupName.GetGroupForProperty(name)))
+                .Distinct(new DelegateEqualityComparer<IProjectProperty>(p => p.Name))
+                .Where(p => PropertyGroupName.IsNotProjectSpecific(p.Name))
+                .Select(p => new ProjectPropertyName(p))
                 .OrderBy(item => item.GroupName.Index);
         }
 
         // ReSharper disable once SuspiciousTypeConversion.Global
+        [CanBeNull, ItemNotNull]
         private EnvDTE80.Solution2 DteSolution => Dte?.Solution as EnvDTE80.Solution2;
 
+        [CanBeNull]
         private EnvDTE80.DTE2 Dte => _serviceProvider.GetService(typeof(EnvDTE.DTE)) as EnvDTE80.DTE2;
 
+        [CanBeNull, UsedImplicitly]
         private EnvDTE.Globals Globals
         {
             get
             {
                 var solution = DteSolution;
                 var fullName = solution?.FullName;
-                return string.IsNullOrEmpty(fullName) ? null : solution?.Globals;
+                return string.IsNullOrEmpty(fullName) ? null : solution.Globals;
             }
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_deferredUpdateThrottle != null);
-            Contract.Invariant(_tracer != null);
-            Contract.Invariant(_serviceProvider != null);
-            Contract.Invariant(_performanceTracer != null);
-            Contract.Invariant(_projects != null);
-            Contract.Invariant(_configurations != null);
-            Contract.Invariant(_specificProjectConfigurations != null);
-            Contract.Invariant(_projectConfigurations != null);
-            Contract.Invariant(_solutionContexts != null);
-            Contract.Invariant(_projectProperties != null);
-            Contract.Invariant(_projectTypeGuids != null);
         }
     }
 }

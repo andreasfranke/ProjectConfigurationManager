@@ -2,22 +2,26 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
 
-    public class PropertyGroupName : IEquatable<PropertyGroupName>
-    {
-        private readonly string _name;
-        private readonly int _index;
+    using Equatable;
 
-        public PropertyGroupName(string name, int index)
+    using JetBrains.Annotations;
+
+    [ImplementsEquatable]
+    public sealed class PropertyGroupName
+    {
+        public PropertyGroupName([NotNull] string name, int index = 10)
         {
             Contract.Requires(name != null);
 
-            _name = name;
-            _index = index;
+            Name = name;
+            Index = index;
         }
 
+        [NotNull, ItemNotNull]
         private static readonly HashSet<string> _projectSpecificProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "ProjectGuid",
@@ -28,10 +32,12 @@
             "Tags"
         };
 
+        [NotNull, ItemNotNull]
         private static readonly HashSet<string> _globalProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "ApplicationIcon",
             "TargetFrameworkVersion",
+            "TargetFrameworkVersions",
             "TargetFrameworkProfile",
             "FileAlignment",
             "ProjectTypeGuids",
@@ -46,8 +52,12 @@
             "WarningsAsErrors",
             "DocumentationFile",
             "GenerateSerializationAssemblies",
+            "Prefer32Bit",
+            "StartupObject",
+            "ApplicationManifest"
         };
 
+        [NotNull, ItemNotNull]
         private static readonly HashSet<string> _debugProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "UseVSHostingProcess",
@@ -56,6 +66,7 @@
             "Optimize",
         };
 
+        [NotNull, ItemNotNull]
         private static readonly HashSet<string> _publishProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "IsWebBootstrapper",
@@ -80,6 +91,7 @@
             "BootstrapperEnabled",
         };
 
+        [NotNull, ItemNotNull]
         private static readonly HashSet<string> _signingProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "SignAssembly",
@@ -90,26 +102,37 @@
             "GenerateManifests",
         };
 
-        public string Name
+        [NotNull, ItemNotNull]
+        private static readonly HashSet<string> _vbProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            get
-            {
-                Contract.Ensures(Contract.Result<string>() != null);
-                return _name;
-            }
+            "MyType",
+            "OptionExplicit",
+            "OptionCompare",
+            "OptionStrict",
+            "OptionInfer",
+            "DefineDebug",
+            "DefineTrace"
+        };
+
+        [NotNull, Equals]
+        public string Name { get; }
+
+        public int Index { get; }
+
+        public static bool IsNotProjectSpecific([CanBeNull] string propertyName)
+        {
+            return _projectSpecificProperties.Contains(propertyName) != true;
         }
 
-        public int Index => _index;
-
-        public static bool IsNotProjectSpecific(string propertyName)
-        {
-            return !_projectSpecificProperties.Contains(propertyName);
-        }
-
-        public static PropertyGroupName GetGroupForProperty(string propertyName)
+        [NotNull]
+        public static PropertyGroupName GetGroupForProperty([NotNull] string propertyName)
         {
             Contract.Requires(propertyName != null);
             Contract.Ensures(Contract.Result<PropertyGroupName>() != null);
+
+            if (propertyName.Contains("."))
+                // ReSharper disable once AssignNullToNotNullAttribute
+                return new PropertyGroupName(propertyName.Split('.')[0]);
 
             if (_globalProperties.Contains(propertyName))
                 return new PropertyGroupName("Global", 0);
@@ -126,87 +149,29 @@
             if (_signingProperties.Contains(propertyName))
                 return new PropertyGroupName("Signing", 4);
 
+            if (_vbProperties.Contains(propertyName))
+                return new PropertyGroupName("VB", 5);
+
             if (propertyName.StartsWith("Scc", StringComparison.OrdinalIgnoreCase))
-                return new PropertyGroupName("Scc", 5);
+                return new PropertyGroupName("Scc", 6);
 
             if (propertyName.Contains("CodeAnalysis"))
-                return new PropertyGroupName("CodeAnalysis", 6);
+                return new PropertyGroupName("CodeAnalysis", 7);
 
-            return new PropertyGroupName("Other", 7);
+            return new PropertyGroupName("Other", 100);
         }
 
         public override string ToString()
         {
-            return _name;
+            return Name;
         }
-
-        #region IEquatable implementation
-
-        /// <summary>
-        /// Returns a hash code for this instance.
-        /// </summary>
-        /// <returns>
-        /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table. 
-        /// </returns>
-        public override int GetHashCode()
-        {
-            return _name.GetHashCode();
-        }
-
-        /// <summary>
-        /// Determines whether the specified <see cref="System.Object"/> is equal to this instance.
-        /// </summary>
-        /// <param name="obj">The <see cref="System.Object"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="System.Object"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public override bool Equals(object obj)
-        {
-            return Equals(obj as PropertyGroupName);
-        }
-
-        /// <summary>
-        /// Determines whether the specified <see cref="PropertyGroupName"/> is equal to this instance.
-        /// </summary>
-        /// <param name="other">The <see cref="PropertyGroupName"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="PropertyGroupName"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public bool Equals(PropertyGroupName other)
-        {
-            return InternalEquals(this, other);
-        }
-
-        private static bool InternalEquals(PropertyGroupName left, PropertyGroupName right)
-        {
-            if (ReferenceEquals(left, right))
-                return true;
-            if (ReferenceEquals(left, null))
-                return false;
-            if (ReferenceEquals(right, null))
-                return false;
-
-            return left.Name.Equals(right.Name);
-        }
-
-        /// <summary>
-        /// Implements the operator ==.
-        /// </summary>
-        public static bool operator ==(PropertyGroupName left, PropertyGroupName right)
-        {
-            return InternalEquals(left, right);
-        }
-        /// <summary>
-        /// Implements the operator !=.
-        /// </summary>
-        public static bool operator !=(PropertyGroupName left, PropertyGroupName right)
-        {
-            return !InternalEquals(left, right);
-        }
-
-        #endregion
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
-            Contract.Invariant(_name != null);
+            Contract.Invariant(Name != null);
         }
 
     }

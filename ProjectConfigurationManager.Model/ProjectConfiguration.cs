@@ -3,76 +3,55 @@
     using System;
     using System.Collections.Generic;
     using System.Collections.ObjectModel;
+    using System.ComponentModel;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Linq;
     using System.Windows.Threading;
 
+    using Equatable;
+
+    using JetBrains.Annotations;
+
     using TomsToolbox.Core;
     using TomsToolbox.Desktop;
 
-    public class ProjectConfiguration : ObservableObject, IEquatable<ProjectConfiguration>
+    [ImplementsEquatable]
+    public sealed class ProjectConfiguration : INotifyPropertyChanged
     {
-        private readonly string _configuration;
-        private readonly string _platform;
-        private readonly Project _project;
-        private readonly IIndexer<bool?> _shouldBuild;
-        private readonly IIndexer<string> _propertyValue;
-
+        [NotNull]
         private IDictionary<string, IProjectProperty> _properties = new Dictionary<string, IProjectProperty>();
 
-        internal ProjectConfiguration(Project project, string configuration, string platform)
+        internal ProjectConfiguration([NotNull] Project project, [CanBeNull] string configuration, [CanBeNull] string platform)
         {
             Contract.Requires(project != null);
 
-            _project = project;
-            _configuration = configuration;
-            _platform = platform;
+            Project = project;
+            Configuration = configuration;
+            Platform = platform;
 
-            _shouldBuild = new ShouldBuildIndexer(this);
-            _propertyValue = new PropertyValueIndexer(this);
+            ShouldBuild = new ShouldBuildIndexer(this);
+            PropertyValue = new PropertyValueIndexer(this);
         }
 
-        public Project Project
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<Project>() != null);
-                return _project;
-            }
-        }
+        [NotNull, Equals]
+        public Project Project { get; }
 
-        public string Configuration => _configuration;
+        [CanBeNull, Equals]
+        public string Configuration { get; }
 
-        public string Platform => _platform;
+        [CanBeNull, Equals]
+        public string Platform { get; }
 
-        public IIndexer<bool?> ShouldBuild
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IIndexer<bool?>>() != null);
-                return _shouldBuild;
-            }
-        }
+        [NotNull] // ReSharper disable once MemberCanBePrivate.Global - used in column binding
+        public IIndexer<bool?> ShouldBuild { get; }
 
-        public IIndexer<string> PropertyValue
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IIndexer<string>>() != null);
-                return _propertyValue;
-            }
-        }
+        [NotNull]
+        public IIndexer<string> PropertyValue { get; }
 
-        internal IDictionary<string, IProjectProperty> Properties
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<IDictionary<string, IProjectProperty>>() != null);
-
-                return new ReadOnlyDictionary<string, IProjectProperty>(_properties);
-            }
-        }
+        [NotNull]
+        internal IDictionary<string, IProjectProperty> Properties => new ReadOnlyDictionary<string, IProjectProperty>(_properties);
 
         public void Delete()
         {
@@ -84,14 +63,16 @@
             return Project.SolutionContexts.Any(ctx => (ctx.ConfigurationName == Configuration) && (ctx.PlatformName == Platform));
         }
 
-        internal void SetProjectFile(ProjectFile projectFile)
+        internal void SetProjectFile([NotNull] ProjectFile projectFile)
         {
             Contract.Requires(projectFile != null);
 
             var properties = projectFile
-                .GetPropertyGroups(_configuration, _platform)
+                .GetPropertyGroups(Configuration, Platform)
                 .SelectMany(group => group.Properties)
+                // ReSharper disable once PossibleNullReferenceException
                 .Distinct(new DelegateEqualityComparer<IProjectProperty>(property => property.Name))
+                // ReSharper disable once PossibleNullReferenceException
                 .ToDictionary(property => property.Name);
 
             _properties = new Dictionary<string, IProjectProperty>(properties);
@@ -99,11 +80,12 @@
             OnPropertyChanged(nameof(PropertyValue));
         }
 
-        private class ShouldBuildIndexer : IIndexer<bool?>
+        private sealed class ShouldBuildIndexer : IIndexer<bool?>
         {
+            [NotNull]
             private readonly ProjectConfiguration _projectConfiguration;
 
-            public ShouldBuildIndexer(ProjectConfiguration projectConfiguration)
+            public ShouldBuildIndexer([NotNull] ProjectConfiguration projectConfiguration)
             {
                 Contract.Requires(projectConfiguration != null);
 
@@ -114,7 +96,9 @@
             {
                 get
                 {
-                    var context = _projectConfiguration.Project.SolutionContexts
+                    var projectSolutionContexts = _projectConfiguration.Project.SolutionContexts;
+
+                    var context = projectSolutionContexts
                         .SingleOrDefault(ctx => (ctx.SolutionConfiguration.UniqueName == solutionConfiguration)
                                                 && (ctx.ConfigurationName == _projectConfiguration.Configuration)
                                                 && (ctx.PlatformName == _projectConfiguration.Platform));
@@ -123,7 +107,9 @@
                 }
                 set
                 {
-                    var context = _projectConfiguration.Project.SolutionContexts
+                    var projectSolutionContexts = _projectConfiguration.Project.SolutionContexts;
+
+                    var context = projectSolutionContexts
                         .FirstOrDefault(ctx => ctx.SolutionConfiguration.UniqueName == solutionConfiguration);
 
                     Contract.Assume(context != null);
@@ -137,24 +123,29 @@
 
                     Dispatcher.CurrentDispatcher.BeginInvoke(() =>
                     {
-                        _projectConfiguration.Project.SpecificProjectConfigurations.ForEach(pc => pc.OnPropertyChanged(nameof(ShouldBuild)));
+                        foreach (var configuration in _projectConfiguration.Project.SpecificProjectConfigurations)
+                        {
+                            configuration.OnPropertyChanged(nameof(ShouldBuild));
+                        }
                     });
                 }
             }
 
             [ContractInvariantMethod]
             [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+            [Conditional("CONTRACTS_FULL")]
             private void ObjectInvariant()
             {
                 Contract.Invariant(_projectConfiguration != null);
             }
         }
 
-        private class PropertyValueIndexer : IIndexer<string>
+        private sealed class PropertyValueIndexer : IIndexer<string>
         {
+            [NotNull]
             private readonly ProjectConfiguration _projectConfiguration;
 
-            public PropertyValueIndexer(ProjectConfiguration projectConfiguration)
+            public PropertyValueIndexer([NotNull] ProjectConfiguration projectConfiguration)
             {
                 Contract.Requires(projectConfiguration != null);
 
@@ -163,15 +154,10 @@
 
             public string this[string propertyName]
             {
-                get
-                {
-                    return _projectConfiguration.Properties.GetValueOrDefault(propertyName)?.Value;
-                }
+                get => _projectConfiguration.Properties.GetValueOrDefault(propertyName)?.Value;
                 set
                 {
-                    IProjectProperty property;
-
-                    if (!_projectConfiguration.Properties.TryGetValue(propertyName, out property) || (property == null))
+                    if (!_projectConfiguration.Properties.TryGetValue(propertyName, out var property) || (property == null))
                     {
                         if (string.IsNullOrEmpty(value)) // do not create empty entries.
                             return;
@@ -191,106 +177,52 @@
 
             [ContractInvariantMethod]
             [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+            [Conditional("CONTRACTS_FULL")]
             private void ObjectInvariant()
             {
                 Contract.Invariant(_projectConfiguration != null);
             }
         }
 
-        private IProjectProperty CreateProperty(string propertyName)
+        [CanBeNull]
+        private IProjectProperty CreateProperty([NotNull] string propertyName)
         {
             Contract.Requires(propertyName != null);
 
-            var property = Project.CreateProperty(propertyName, _configuration, _platform);
+            var property = Project.CreateProperty(propertyName, Configuration, Platform);
 
             _properties.Add(propertyName, property);
 
             return property;
         }
 
-        public void DeleteProperty(string propertyName)
+        public void DeleteProperty([NotNull] string propertyName)
         {
             Contract.Requires(propertyName != null);
 
-            Project.DeleteProperty(propertyName, _configuration, _platform);
+            Project.DeleteProperty(propertyName, Configuration, Platform);
 
             if (_properties.Remove(propertyName))
+            {
                 OnPropertyChanged(nameof(PropertyValue));
+            }
         }
 
-        #region IEquatable implementation
+        public event PropertyChangedEventHandler PropertyChanged;
 
-        /// <summary>
-        /// Returns a hash code for this instance.
-        /// </summary>
-        /// <returns>
-        /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table. 
-        /// </returns>
-        public override int GetHashCode()
+        private void OnPropertyChanged([NotNull] string propertyName)
         {
-            return Project.GetHashCode() + (_configuration?.GetHashCode()).GetValueOrDefault() + (_platform?.GetHashCode()).GetValueOrDefault();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
-
-        /// <summary>
-        /// Determines whether the specified <see cref="System.Object"/> is equal to this instance.
-        /// </summary>
-        /// <param name="obj">The <see cref="System.Object"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="System.Object"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public override bool Equals(object obj)
-        {
-            return Equals(obj as ProjectConfiguration);
-        }
-
-        /// <summary>
-        /// Determines whether the specified <see cref="ProjectConfiguration"/> is equal to this instance.
-        /// </summary>
-        /// <param name="other">The <see cref="ProjectConfiguration"/> to compare with this instance.</param>
-        /// <returns><c>true</c> if the specified <see cref="ProjectConfiguration"/> is equal to this instance; otherwise, <c>false</c>.</returns>
-        public bool Equals(ProjectConfiguration other)
-        {
-            return InternalEquals(this, other);
-        }
-
-        [ContractVerification(false)]
-        private static bool InternalEquals(ProjectConfiguration left, ProjectConfiguration right)
-        {
-            if (ReferenceEquals(left, right))
-                return true;
-            if (ReferenceEquals(left, null))
-                return false;
-            if (ReferenceEquals(right, null))
-                return false;
-
-            return (left.Project == right.Project)
-                   && (left._configuration == right._configuration)
-                   && (left._platform == right._platform);
-        }
-
-        /// <summary>
-        /// Implements the operator ==.
-        /// </summary>
-        public static bool operator ==(ProjectConfiguration left, ProjectConfiguration right)
-        {
-            return InternalEquals(left, right);
-        }
-
-        /// <summary>
-        /// Implements the operator !=.
-        /// </summary>
-        public static bool operator !=(ProjectConfiguration left, ProjectConfiguration right)
-        {
-            return !InternalEquals(left, right);
-        }
-
-        #endregion
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
-            Contract.Invariant(_project != null);
-            Contract.Invariant(_shouldBuild != null);
-            Contract.Invariant(_propertyValue != null);
+            Contract.Invariant(Project != null);
+            Contract.Invariant(ShouldBuild != null);
+            Contract.Invariant(PropertyValue != null);
             Contract.Invariant(_properties != null);
         }
     }

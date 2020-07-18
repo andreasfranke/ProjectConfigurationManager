@@ -6,27 +6,55 @@
              xmlns:local="clr-namespace:tomenglertde.ProjectConfigurationManager.View"
              xmlns:dgx="clr-namespace:DataGridExtensions;assembly=DataGridExtensions"
              xmlns:themes="clr-namespace:tomenglertde.ProjectConfigurationManager.View.Themes"
+             xmlns:styles="urn:TomsToolbox.Wpf.Styles"
              d:DataContext="{d:DesignInstance local:ProjectTypesViewModel}">
   <Grid Margin="10">
-    <DataGrid ItemsSource="{Binding Solution.Projects}"
+    <DataGrid x:Name="DataGrid"
+              ItemsSource="{Binding Solution.Projects}"
               AutoGenerateColumns="False"
-              VerticalGridLinesBrush="LightGray" HorizontalGridLinesBrush="LightGray"
+              Style="{StaticResource {x:Static styles:ResourceKeys.DataGridStyle}}"
               CanUserAddRows="False" CanUserResizeRows="False"
               dgx:DataGridFilter.IsAutoFilterEnabled="True"
               dgx:Tools.ApplyInitialSorting="True"
               local:ProjectTypesColumnManager.IsAttached="True"
               FrozenColumnCount="1">
       <DataGrid.ColumnHeaderStyle>
-        <Style TargetType="DataGridColumnHeader">
-          <Setter Property="VerticalContentAlignment" Value="Bottom"/>
-          <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Static styles:ResourceKeys.DataGridColumnHeaderStyle}}">
+          <Setter Property="VerticalContentAlignment" Value="Bottom" />
+          <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         </Style>
       </DataGrid.ColumnHeaderStyle>
+      <DataGrid.RowStyle>
+        <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Static styles:ResourceKeys.DataGridRowStyle}}">
+          <Style.Triggers>
+            <!-- ReSharper disable once Xaml.BindingWithContextNotResolved -->
+            <DataTrigger Binding="{Binding IsLoaded}" Value="False">
+              <Setter Property="IsEnabled" Value="False" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </DataGrid.RowStyle>
       <DataGrid.Columns>
         <DataGridTemplateColumn Header="Project" DisplayIndex="0" CanUserReorder="False"
                                 IsReadOnly="True" SortMemberPath="SortKey" SortDirection="Ascending"
                                 CellTemplate="{DynamicResource {x:Static themes:ResourceKeys.ProjectNameTemplate}}" />
+        <DataGridTextColumn Header="Tags" DisplayIndex="1" CanUserReorder="False" IsReadOnly="True"
+                            Binding="{Binding DefaultProjectConfiguration.PropertyValue[Tags]}"
+                            dgx:DataGridFilterColumn.Template="{StaticResource {x:Static themes:ResourceKeys.TagFilterTemplate}}" />
       </DataGrid.Columns>
+      <DataGrid.ItemsPanel>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel Tag="{Binding ElementName=DataGrid}">
+            <VirtualizingStackPanel.ContextMenu>
+              <!-- ReSharper disable once Xaml.BindingWithContextNotResolved -->
+              <ContextMenu DataContext="{Binding Path=(PlacementTarget).Tag, RelativeSource={RelativeSource Self}}"
+                           Style="{StaticResource {x:Static styles:ResourceKeys.ContextMenuStyle}}">
+                <MenuItem Header="Unload selected project(s)" Command="{Binding DataContext.UnloadProjectsCommand}" CommandParameter="{Binding SelectedItems}" />
+              </ContextMenu>
+            </VirtualizingStackPanel.ContextMenu>
+          </VirtualizingStackPanel>
+        </ItemsPanelTemplate>
+      </DataGrid.ItemsPanel>
     </DataGrid>
   </Grid>
 </UserControl>

@@ -5,12 +5,14 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" mc:Ignorable="d" d:DesignHeight="300" d:DesignWidth="800"
              xmlns:view="clr-namespace:tomenglertde.ProjectConfigurationManager.View"
              xmlns:dgx="clr-namespace:DataGridExtensions;assembly=DataGridExtensions"
-             xmlns:model="clr-namespace:tomenglertde.ProjectConfigurationManager.Model;assembly=ProjectConfigurationManager.Model"
              xmlns:toms="urn:TomsToolbox"
              xmlns:themes="clr-namespace:tomenglertde.ProjectConfigurationManager.View.Themes"
+             xmlns:styles="urn:TomsToolbox.Wpf.Styles"
              d:DataContext="{d:DesignInstance view:BuildConfigurationViewModel}">
   <UserControl.Resources>
     <toms:ConfirmedCommandConverter x:Key="ErrorHandlerCommandConverter" Error="ConfirmedCommandConverter_Error" />
+    <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Static styles:ResourceKeys.CheckBoxStyle}}" />
+    <Style TargetType="DataGrid" BasedOn="{StaticResource {x:Static styles:ResourceKeys.DataGridStyle}}" />
   </UserControl.Resources>
   <DockPanel Margin="10">
     <Border DockPanel.Dock="Right" Margin="5">
@@ -27,14 +29,15 @@
           <TextBlock Text="Project builds in this configuration." TextWrapping="Wrap" />
         </CheckBox>
         <Decorator Height="25" />
-        <TextBlock TextWrapping="Wrap">Use the context menu to delete unused project configurations from the project files.<LineBreak /><LineBreak />You can only delete project configurations which are not selected in any solution configuration.</TextBlock>
-
+        <TextBlock TextWrapping="Wrap">
+          Use the context menu to delete unused project configurations from the project files.
+          <LineBreak /><LineBreak />
+          You can only delete project configurations which are not selected in any solution configuration.
+        </TextBlock>
       </StackPanel>
     </Border>
-    <DataGrid x:Name="DataGrid"
-              ItemsSource="{Binding Solution.SpecificProjectConfigurations}"
+    <DataGrid ItemsSource="{Binding Solution.SpecificProjectConfigurations}"
               AutoGenerateColumns="False"
-              VerticalGridLinesBrush="LightGray" HorizontalGridLinesBrush="LightGray"
               CanUserAddRows="False" CanUserResizeRows="False"
               view:BuildConfigurationColumnsManager.Configurations="{Binding Solution.SolutionConfigurations}"
               toms:MultiSelectorExtensions.SelectionBinding="{Binding SelectedConfigurations}"
@@ -45,39 +48,50 @@
         <ItemsPanelTemplate>
           <VirtualizingStackPanel>
             <VirtualizingStackPanel.ContextMenu>
-              <ContextMenu>
+              <ContextMenu Style="{StaticResource {x:Static styles:ResourceKeys.ContextMenuStyle}}">
                 <MenuItem Header="Delete" Command="{Binding DeleteCommand, Converter={StaticResource ErrorHandlerCommandConverter}}" />
               </ContextMenu>
             </VirtualizingStackPanel.ContextMenu>
           </VirtualizingStackPanel>
         </ItemsPanelTemplate>
       </DataGrid.ItemsPanel>
-
       <DataGrid.ColumnHeaderStyle>
-        <Style TargetType="DataGridColumnHeader">
+        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Static styles:ResourceKeys.DataGridColumnHeaderStyle}}">
           <Setter Property="VerticalContentAlignment" Value="Bottom" />
           <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         </Style>
       </DataGrid.ColumnHeaderStyle>
       <DataGrid.Columns>
-        <DataGridTemplateColumn Header="Project" DisplayIndex="0"  CanUserReorder="False" 
-                                IsReadOnly="True" 
+        <DataGridTemplateColumn Header="Project" DisplayIndex="0" CanUserReorder="False"
+                                IsReadOnly="True"
                                 SortMemberPath="Project.SortKey"
-                                SortDirection="Ascending" 
-                                CellTemplate="{StaticResource {x:Static themes:ResourceKeys.ProjectConfigurationNameTemplate}}"/>
-        <DataGridTextColumn Header="Configuration" DisplayIndex="1" CanUserReorder="False" 
-                            IsReadOnly="True" 
-                            Binding="{Binding Configuration}" 
-                            SortDirection="Ascending" />
-        <DataGridTextColumn Header="Platform" DisplayIndex="2" CanUserReorder="False" 
-                            IsReadOnly="True" 
-                            Binding="{Binding Platform}"/>
+                                SortDirection="Ascending"
+                                CellTemplate="{StaticResource {x:Static themes:ResourceKeys.ProjectConfigurationNameTemplate}}" />
+        <DataGridTextColumn Header="Configuration" DisplayIndex="1" CanUserReorder="False"
+                            IsReadOnly="True"
+                            Binding="{Binding Configuration}"
+                            SortDirection="Ascending"
+                            dgx:DataGridFilterColumn.Template="{StaticResource {x:Static themes:ResourceKeys.MultipleChoiceFilterTemplate}}" />
+        <DataGridTextColumn Header="Platform" DisplayIndex="2" CanUserReorder="False"
+                            IsReadOnly="True"
+                            Binding="{Binding Platform}"
+                            dgx:DataGridFilterColumn.Template="{StaticResource {x:Static themes:ResourceKeys.MultipleChoiceFilterTemplate}}" />
         <DataGridTextColumn Header="Tags" DisplayIndex="3" CanUserReorder="False"
                             Binding="{Binding Project.DefaultProjectConfiguration.PropertyValue[Tags]}"
                             view:PropertiesColumnsManagerBehavior.PropertyName="Tags"
                             dgx:DataGridFilterColumn.Template="{StaticResource {x:Static themes:ResourceKeys.TagFilterTemplate}}" />
 
       </DataGrid.Columns>
+      <DataGrid.RowStyle>
+        <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Static styles:ResourceKeys.DataGridRowStyle}}">
+          <Style.Triggers>
+            <!-- ReSharper disable once Xaml.BindingWithContextNotResolved -->
+            <DataTrigger Binding="{Binding Project.IsLoaded}" Value="False">
+              <Setter Property="IsEnabled" Value="False" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </DataGrid.RowStyle>
     </DataGrid>
   </DockPanel>
 </UserControl>

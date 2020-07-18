@@ -4,10 +4,13 @@
     using System.Collections.ObjectModel;
     using System.ComponentModel;
     using System.ComponentModel.Composition;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Linq;
     using System.Windows.Input;
+
+    using JetBrains.Annotations;
 
     using tomenglertde.ProjectConfigurationManager.Model;
 
@@ -18,63 +21,57 @@
 
     [DisplayName("Build Configuration")]
     [VisualCompositionExport(GlobalId.ShellRegion, Sequence = 1)]
-    class BuildConfigurationViewModel : ObservableObject
+    internal sealed class BuildConfigurationViewModel : ObservableObject
     {
-        private readonly Solution _solution;
-        private readonly ICollection<ProjectConfiguration> _selectedConfigurations = new ObservableCollection<ProjectConfiguration>();
-
         [ImportingConstructor]
-        public BuildConfigurationViewModel(Solution solution)
+        public BuildConfigurationViewModel([NotNull] Solution solution)
         {
             Contract.Requires(solution != null);
 
-            _solution = solution;
+            Solution = solution;
         }
 
-        public Solution Solution
-        {
-            get
-            {
-                Contract.Ensures(Contract.Result<Solution>() != null);
+        [NotNull]
+        public Solution Solution { get; }
 
-                return _solution;
-            }
-        }
+        [NotNull, ItemNotNull]
+        public ICollection<ProjectConfiguration> SelectedConfigurations { get; } = new ObservableCollection<ProjectConfiguration>();
 
-        public ICollection<ProjectConfiguration> SelectedConfigurations => _selectedConfigurations;
-
+        [NotNull]
         public ICommand DeleteCommand => new DelegateCommand(CanDelete, Delete);
 
         private void Delete()
         {
-            var configurations = _selectedConfigurations.ToArray();
+            var configurations = SelectedConfigurations.ToArray();
 
-            configurations.ForEach(c => c.Delete());
+            configurations.ForEach(c => c?.Delete());
 
-            _solution.Update();
+            Solution.Update();
         }
 
         private bool CanDelete()
         {
-            var canEditAllFiles = _selectedConfigurations
+            var canEditAllFiles = SelectedConfigurations
                 .Select(cfg => cfg.Project)
                 .Distinct()
+                // ReSharper disable once PossibleNullReferenceException
                 .All(prj => prj.CanEdit());
 
-            var shouldNotBuildAny = _selectedConfigurations
+            var shouldNotBuildAny = SelectedConfigurations
                 .All(cfg => !cfg.ShouldBuildInAnyConfiguration());
 
-            return _selectedConfigurations.Any()
+            return SelectedConfigurations.Any()
                    && canEditAllFiles
                    && shouldNotBuildAny;
         }
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
-            Contract.Invariant(_solution != null);
-            Contract.Invariant(_selectedConfigurations != null);
+            Contract.Invariant(Solution != null);
+            Contract.Invariant(SelectedConfigurations != null);
         }
     }
 }

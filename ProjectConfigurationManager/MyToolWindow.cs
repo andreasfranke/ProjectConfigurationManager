@@ -8,6 +8,7 @@
     using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Reflection;
@@ -15,6 +16,8 @@
     using System.Windows;
     using System.Windows.Controls.Primitives;
     using System.Windows.Documents;
+
+    using JetBrains.Annotations;
 
     using Microsoft.VisualStudio;
     using Microsoft.VisualStudio.Shell;
@@ -37,14 +40,16 @@
     /// implementation of the IVsUIElementPane interface.
     /// </summary>
     [Guid("01a9a1a2-ea6f-4cb6-ae33-996b06435a62")]
-    public class MyToolWindow : ToolWindowPane, IVsServiceProvider
+    public sealed class MyToolWindow : ToolWindowPane, IVsServiceProvider
     {
         private const string _introMessage = "Project Configuration Manager loaded."
             + "\nHome: https://github.com/tom-englert/ProjectConfigurationManager"
             + "\nReport issues: https://github.com/tom-englert/ProjectConfigurationManager/issues"
-            + "\nSupport the project by adding a short review: https://visualstudiogallery.msdn.microsoft.com/cf7efe17-ae87-40fe-a1e2-f2d61907f043/view/Reviews";
+            + "\nSupport the project by adding a short review: https://marketplace.visualstudio.com/vsgallery/cf7efe17-ae87-40fe-a1e2-f2d61907f043#review-details";
 
+        [NotNull]
         private readonly ICompositionHost _compositionHost = new CompositionHost();
+        [NotNull]
         private readonly ITracer _tracer;
 
         /// <summary>
@@ -62,7 +67,8 @@
 
             var context = CreateRegistrationContext();
 
-            _compositionHost.AddCatalog(new DirectoryCatalog(path, "*.dll", context));
+            // ReSharper disable once AssignNullToNotNullAttribute
+            _compositionHost.AddCatalog(new DirectoryCatalog(path, "ProjectConfigurationManager*.dll", context));
             _compositionHost.ComposeExportedValue((IVsServiceProvider)this);
 
             _tracer = _compositionHost.GetExportedValue<ITracer>();
@@ -79,13 +85,14 @@
                 var executingAssembly = Assembly.GetExecutingAssembly();
                 var folder = Path.GetDirectoryName(executingAssembly.Location);
 
-                _tracer.WriteLine("Assembly location: {0}", folder);
-                _tracer.WriteLine("Version: {0}", new AssemblyName(executingAssembly.FullName).Version);
+                _tracer.WriteLine(string.Format(CultureInfo.InvariantCulture, "Assembly location: {0}", folder));
+                _tracer.WriteLine(string.Format(CultureInfo.InvariantCulture, "Version: {0}", new AssemblyName(executingAssembly.FullName).Version));
 
 
                 var view = _compositionHost.GetExportedValue<ShellView>();
                 view.Resources.MergedDictionaries.Add(DataTemplateManager.CreateDynamicDataTemplates(_compositionHost.Container));
 
+                // ReSharper disable once AssignNullToNotNullAttribute
                 view.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler(Navigate_Click));
 
                 Content = view;
@@ -103,12 +110,11 @@
             _compositionHost.Dispose();
         }
 
-        private void Navigate_Click(object sender, RoutedEventArgs e)
+        private void Navigate_Click([NotNull] object sender, [NotNull] RoutedEventArgs e)
         {
-            string url = null;
+            string url;
 
-            var source = e.OriginalSource as FrameworkElement;
-            if (source != null)
+            if (e.OriginalSource is FrameworkElement source)
             {
                 var button = source.TryFindAncestorOrSelf<ButtonBase>();
                 if (button == null)
@@ -133,15 +139,14 @@
         }
 
         [Localizable(false)]
-        private void CreateWebBrowser(string url)
+        private void CreateWebBrowser([NotNull] string url)
         {
             Contract.Requires(url != null);
 
             var webBrowsingService = (IVsWebBrowsingService)GetService(typeof(SVsWebBrowsingService));
             if (webBrowsingService != null)
             {
-                IVsWindowFrame pFrame;
-                var hr = webBrowsingService.Navigate(url, (uint)__VSWBNAVIGATEFLAGS.VSNWB_WebURLOnly, out pFrame);
+                var hr = webBrowsingService.Navigate(url, (uint)__VSWBNAVIGATEFLAGS.VSNWB_WebURLOnly, out var pFrame);
                 if (ErrorHandler.Succeeded(hr) && (pFrame != null))
                 {
                     hr = pFrame.Show();
@@ -154,6 +159,8 @@
         }
 
         [ContractVerification(false)]
+        [NotNull]
+        [SuppressMessage("ReSharper", "PossibleNullReferenceException")]
         private static RegistrationBuilder CreateRegistrationContext()
         {
             Contract.Ensures(Contract.Result<RegistrationBuilder>() != null);
@@ -165,7 +172,8 @@
             return context;
         }
 
-        private static ConstructorInfo SelectConstructor(ConstructorInfo[] constructors)
+        [CanBeNull]
+        private static ConstructorInfo SelectConstructor([NotNull, ItemNotNull] ConstructorInfo[] constructors)
         {
             Contract.Requires(constructors != null);
 
@@ -175,6 +183,7 @@
 
         [ContractInvariantMethod]
         [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+        [Conditional("CONTRACTS_FULL")]
         private void ObjectInvariant()
         {
             Contract.Invariant(_compositionHost != null);

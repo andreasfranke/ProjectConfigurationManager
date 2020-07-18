@@ -3,7 +3,9 @@
     using System;
     using System.Collections;
     using System.Collections.Generic;
+    using System.Collections.Immutable;
     using System.Collections.Specialized;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Diagnostics.Contracts;
     using System.Linq;
@@ -15,63 +17,58 @@
     using DataGridExtensions;
     using DataGridExtensions.Framework;
 
+    using JetBrains.Annotations;
+
     using tomenglertde.ProjectConfigurationManager.Model;
+    using tomenglertde.ProjectConfigurationManager.View.Themes;
+
+    using Throttle;
 
     using TomsToolbox.Core;
     using TomsToolbox.ObservableCollections;
     using TomsToolbox.Wpf.Composition;
     using TomsToolbox.Wpf.Interactivity;
 
-    public class PropertiesColumnsManagerBehavior : FrameworkElementBehavior<DataGrid>
+    public sealed class PropertiesColumnsManagerBehavior : FrameworkElementBehavior<DataGrid>
     {
-        private readonly DispatcherThrottle _displayIndexChangedThrottle;
-        private readonly DispatcherThrottle _columnsCreatedThrottle;
-
+        [CanBeNull, ItemNotNull]
         private IObservableCollection<object> _projectPropertyNames;
+        [CanBeNull]
         private Configuration _configuration;
+        [CanBeNull]
         private ITracer _tracer;
 
-        internal static string GetProjectPropertyName(DependencyObject obj)
-        {
-            Contract.Requires(obj != null);
-            return (string)obj.GetValue(ProjectPropertyNameProperty);
-        }
-        internal static void SetProjectPropertyName(DependencyObject obj, string value)
-        {
-            Contract.Requires(obj != null);
-            obj.SetValue(ProjectPropertyNameProperty, value);
-        }
+        [NotNull]
         internal static readonly DependencyProperty ProjectPropertyNameProperty =
             DependencyProperty.RegisterAttached("ProjectPropertyName", typeof(ProjectPropertyName), typeof(PropertiesColumnsManagerBehavior), new FrameworkPropertyMetadata(null));
 
 
-        public static string GetPropertyName(DependencyObject obj)
+        [CanBeNull]
+        public static string GetPropertyName([NotNull] DependencyObject obj)
         {
             Contract.Requires(obj != null);
             return (string)obj.GetValue(PropertyNameProperty);
         }
-        public static void SetPropertyName(DependencyObject obj, string value)
+        public static void SetPropertyName([NotNull] DependencyObject obj, [CanBeNull] string value)
         {
             Contract.Requires(obj != null);
             obj.SetValue(PropertyNameProperty, value);
         }
+        [NotNull]
         public static readonly DependencyProperty PropertyNameProperty =
             DependencyProperty.RegisterAttached("PropertyName", typeof(string), typeof(PropertiesColumnsManagerBehavior), new FrameworkPropertyMetadata(null));
 
 
+        [CanBeNull, ItemNotNull, UsedImplicitly]
         public ICollection Properties
         {
-            get { return (ICollection)GetValue(PropertiesProperty); }
-            set { SetValue(PropertiesProperty, value); }
+            get => (ICollection)GetValue(PropertiesProperty);
+            set => SetValue(PropertiesProperty, value);
         }
+        [NotNull]
         public static readonly DependencyProperty PropertiesProperty =
+            // ReSharper disable once PossibleNullReferenceException
             DependencyProperty.Register("Properties", typeof(ICollection), typeof(PropertiesColumnsManagerBehavior), new FrameworkPropertyMetadata(null, (sender, e) => ((PropertiesColumnsManagerBehavior)sender).Properties_Changed(e.NewValue as IList<object>)));
-
-        public PropertiesColumnsManagerBehavior()
-        {
-            _columnsCreatedThrottle = new DispatcherThrottle(DispatcherPriority.Background, ColumnsCreated);
-            _displayIndexChangedThrottle = new DispatcherThrottle(DispatcherPriority.Background, ColumnsDisplayIndexChanged);
-        }
 
 
         protected override void OnAttached()
@@ -86,12 +83,13 @@
             Initialize();
         }
 
-        private void Properties_Changed(IList<object> propertyGroups)
+        private void Properties_Changed([CanBeNull, ItemNotNull] IList<object> propertyGroups)
         {
             if (propertyGroups == null)
                 return;
 
             _projectPropertyNames = propertyGroups.ObservableSelectMany(group => ((CollectionViewGroup)group).Items);
+            // ReSharper disable once AssignNullToNotNullAttribute
             _projectPropertyNames.CollectionChanged += (sender, e) => ProjectProperties_CollectionChanged(e);
 
             Initialize();
@@ -107,10 +105,10 @@
                 return;
 
             dataGrid.Columns.AddRange(_projectPropertyNames.OfType<ProjectPropertyName>().Select(CreateColumn));
-            dataGrid.ColumnDisplayIndexChanged += (_, __) => _displayIndexChangedThrottle.Tick();
+            dataGrid.ColumnDisplayIndexChanged += (_, __) => OnColumnsDisplayIndexChanged();
         }
 
-        private void ProjectProperties_CollectionChanged(NotifyCollectionChangedEventArgs e)
+        private void ProjectProperties_CollectionChanged([NotNull] NotifyCollectionChangedEventArgs e)
         {
             Contract.Requires(e != null);
 
@@ -134,6 +132,7 @@
                         .ToArray();
 
                     var columnsToRemove = dataGrid.Columns
+                        // ReSharper disable once PossibleNullReferenceException
                         .Where(col => (oldColumns?.Contains(col.GetValue(ProjectPropertyNameProperty))).GetValueOrDefault())
                         .ToArray();
 
@@ -149,38 +148,41 @@
             }
         }
 
-        private DataGridColumn CreateColumn(ProjectPropertyName projectPropertyName)
+        [NotNull]
+        private DataGridColumn CreateColumn([NotNull] ProjectPropertyName projectPropertyName)
         {
             Contract.Requires(projectPropertyName != null);
+            Contract.Ensures(Contract.Result<DataGridColumn>() != null);
 
             var column = new DataGridTextColumn
             {
                 Header = new TextBlock { Text = projectPropertyName.DisplayName },
                 Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-                Binding = new Binding(@"PropertyValue[" + projectPropertyName.Name + @"]")
-                {
-                    Mode = BindingMode.TwoWay
-                }
+                Binding = new Binding(@"PropertyValue[" + projectPropertyName.Name + @"]") { Mode = BindingMode.TwoWay },
             };
 
             column.EnableMultilineEditing();
 
+            // ReSharper disable once AssignNullToNotNullAttribute
+            column.SetValue(DataGridFilterColumn.TemplateProperty, AssociatedObject?.FindResource(ResourceKeys.MultipleChoiceFilterTemplate));
             column.SetValue(ProjectPropertyNameProperty, projectPropertyName);
             column.SetValue(PropertyNameProperty, projectPropertyName.Name);
 
-            _columnsCreatedThrottle.Tick();
+            OnColumnCreated();
 
             return column;
         }
 
-        private static int GetDisplayIndex(ProjectPropertyName projectPropertyName, Configuration configuration)
+        private static int GetDisplayIndex([CanBeNull] ProjectPropertyName projectPropertyName, [CanBeNull] Configuration configuration)
         {
             if ((projectPropertyName == null) || (configuration == null))
                 return -1;
 
-            string[] propertyColumnOrder;
+            var columnOrder = configuration.PropertyColumnOrder;
+            if (columnOrder == null)
+                return -1;
 
-            if (!configuration.PropertyColumnOrder.TryGetValue(projectPropertyName.GroupName.Name, out propertyColumnOrder) || (propertyColumnOrder == null))
+            if (!columnOrder.TryGetValue(projectPropertyName.GroupName.Name, out var propertyColumnOrder) || (propertyColumnOrder == null))
                 return -1;
 
             var index = propertyColumnOrder.IndexOf(projectPropertyName.Name);
@@ -188,11 +190,12 @@
             return index;
         }
 
-        private class ColumInfo
+        private sealed class ColumInfo
         {
+            [NotNull]
             private readonly DataGridColumn _column;
 
-            public ColumInfo(DataGridColumn column, Configuration configuration)
+            public ColumInfo([NotNull] DataGridColumn column, [CanBeNull] Configuration configuration)
             {
                 Contract.Requires(column != null);
 
@@ -202,6 +205,7 @@
                 DisplayIndex = GetDisplayIndex(ProjectPropertyName, configuration);
             }
 
+            [NotNull]
             public DataGridColumn Column
             {
                 get
@@ -211,19 +215,22 @@
                 }
             }
 
+            [CanBeNull]
             public ProjectPropertyName ProjectPropertyName { get; }
 
             public int DisplayIndex { get; }
 
             [ContractInvariantMethod]
             [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
+            [Conditional("CONTRACTS_FULL")]
             private void ObjectInvariant()
             {
                 Contract.Invariant(_column != null);
             }
         }
 
-        private void ColumnsCreated()
+        [Throttled(typeof(DispatcherThrottle), (int)DispatcherPriority.Background)]
+        private void OnColumnCreated()
         {
             try
             {
@@ -236,19 +243,23 @@
 
                 dataGrid.Columns
                     .Skip(frozenColumnCount)
+                    // ReSharper disable once AssignNullToNotNullAttribute
                     .Select(col => new ColumInfo(col, _configuration))
-                    .Where(item => item.ProjectPropertyName != null)
+                    .Where(col => col.ProjectPropertyName != null)
                     .OrderBy(col => col.ProjectPropertyName.GroupName.Index)
+                    // ReSharper disable PossibleNullReferenceException
                     .ThenBy(col => col.DisplayIndex)
-                    .ForEach(item => item.Column.DisplayIndex = nextIndex++);
+                    .ForEach(col => col.Column.DisplayIndex = nextIndex++);
+                // ReSharper restore PossibleNullReferenceException
             }
             catch (Exception ex)
             {
-                _tracer.TraceError(ex);
+                _tracer?.TraceError(ex);
             }
         }
 
-        private void ColumnsDisplayIndexChanged()
+        [Throttled(typeof(DispatcherThrottle), (int)DispatcherPriority.Background)]
+        private void OnColumnsDisplayIndexChanged()
         {
             try
             {
@@ -261,47 +272,35 @@
 
                 var columnsByGroup = dataGrid.Columns
                     .Skip(dataGrid.FrozenColumnCount)
+                    // ReSharper disable once PossibleNullReferenceException
                     .OrderBy(col => col.DisplayIndex)
+                    // ReSharper disable once PossibleNullReferenceException
                     .Select(col => col.GetValue(ProjectPropertyNameProperty) as ProjectPropertyName)
                     .Where(property => property != null)
                     .GroupBy(property => property.GroupName);
 
-                var propertyColumnOrder = _configuration.PropertyColumnOrder;
-                var hasChanged = false;
+                var propertyColumnOrder = _configuration.PropertyColumnOrder ?? ImmutableDictionary<string, string[]>.Empty;
 
                 foreach (var group in columnsByGroup)
                 {
-                    var groupName = group?.Key?.Name;
+                    var groupName = group.Key?.Name;
                     if (groupName == null)
                         continue;
 
+                    // ReSharper disable once PossibleNullReferenceException
                     var columnNames = group.Select(property => property.Name).ToArray();
 
-                    string[] current;
-
-                    if (propertyColumnOrder.TryGetValue(groupName, out current) && (current?.SequenceEqual(columnNames) == true))
+                    // ReSharper disable once PossibleNullReferenceException
+                    if (propertyColumnOrder.TryGetValue(groupName, out var current) && (current?.SequenceEqual(columnNames) == true))
                         continue;
 
-                    propertyColumnOrder[groupName] = columnNames;
-                    hasChanged = true;
+                    _configuration.PropertyColumnOrder = propertyColumnOrder.SetItem(groupName, columnNames);
                 }
-
-                if (hasChanged)
-                    _configuration.Save();
-
             }
             catch (Exception ex)
             {
-                _tracer.TraceError(ex);
+                _tracer?.TraceError(ex);
             }
-        }
-
-        [ContractInvariantMethod]
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_columnsCreatedThrottle != null);
-            Contract.Invariant(_displayIndexChangedThrottle != null);
         }
     }
 }

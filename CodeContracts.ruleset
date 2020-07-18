@@ -1,14 +1,21 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<RuleSet Name="Code Contracts Rules" Description=" All rules except those conflicting with CodeContracts" ToolsVersion="14.0">
+<RuleSet Name="Code Contracts Rules" Description=" All rules except those conflicting with CodeContracts" ToolsVersion="15.0">
   <Include Path="allrules.ruleset" Action="Error" />
+  <Rules AnalyzerId="ContracsReSharperInterop" RuleNamespace="ContracsReSharperInterop">
+    <Rule Id="CCRSI_ContractForNotNull" Action="None" />
+    <Rule Id="CCRSI_CreateContractClass" Action="None" />
+    <Rule Id="CCRSI_CreateContractInvariantMethod" Action="None" />
+  </Rules>
   <Rules AnalyzerId="Microsoft.Analyzers.ManagedCodeAnalysis" RuleNamespace="Microsoft.Rules.Managed">
     <Rule Id="CA1004" Action="None" />
     <Rule Id="CA1006" Action="None" />
     <Rule Id="CA1011" Action="None" />
     <Rule Id="CA1020" Action="None" />
+    <Rule Id="CA1026" Action="None" />
     <Rule Id="CA1031" Action="None" />
     <Rule Id="CA1040" Action="None" />
     <Rule Id="CA1043" Action="None" />
+    <Rule Id="CA1050" Action="None" />
     <Rule Id="CA1062" Action="None" />
     <Rule Id="CA1065" Action="None" />
     <Rule Id="CA1303" Action="None" />
@@ -23,6 +30,7 @@
     <Rule Id="CA2104" Action="None" />
     <Rule Id="CA2105" Action="None" />
     <Rule Id="CA2122" Action="None" />
+    <Rule Id="CA2204" Action="None" />
     <Rule Id="CA2210" Action="None" />
     <Rule Id="CA2214" Action="None" />
     <Rule Id="CA2227" Action="None" />
