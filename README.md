@@ -4,8 +4,7 @@ Forget about clicking through all the tabs in all the property pages - see all y
 Color highlighting let's you verify at a glance if the configurations of your projects are consistent. 
 Initialize new projects by simply copy/paste defaults from other projects.
 
-Install the extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=TomEnglert.ProjectConfigurationManager).
-The latest build is also available at the [Open VsixGallery](http://vsixgallery.com/extension/e31595c9-3e0c-4f5c-b35c-dd8d61e364d1/)
+Build and Install on your own. This extension version is NOT available from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=TomEnglert.ProjectConfigurationManager) nor [Open VsixGallery](http://vsixgallery.com/extension/e31595c9-3e0c-4f5c-b35c-dd8d61e364d1/)
 
 ![Project Properties](Assets/SolutionToolsMenu.png)
 
