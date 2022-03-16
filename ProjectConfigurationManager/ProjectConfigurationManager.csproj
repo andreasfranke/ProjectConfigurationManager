@@ -170,7 +170,7 @@
       <Version>17.1.32210.191</Version>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
-      <Version>6.0.8</Version>
+      <Version>13.0.1</Version>
     </PackageReference>
     <PackageReference Include="NullGuard.Fody">
       <Version>1.8.5</Version>

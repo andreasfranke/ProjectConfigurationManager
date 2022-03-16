@@ -171,7 +171,7 @@
             {
                 try
                 {
-                    var vsProject = DteProject?.Object as VSLangProj.VSProject;
+                    VSLangProj.VSProject vsProject = DteProject?.Object as VSLangProj.VSProject;
 
                     return vsProject?.References?.Cast<VSLangProj.Reference>();
                 }
@@ -196,9 +196,10 @@
 
         public void AddFile([NotNull] string fileName, int buildAction = 0)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
-                var projectItem = DteProject?.ProjectItems?.AddFromFile(fileName);
+                EnvDTE.ProjectItem projectItem = DteProject?.ProjectItems?.AddFromFile(fileName);
 
                 var property = projectItem?.Properties?.Item(@"BuildAction");
                 if (property != null)
@@ -230,6 +231,7 @@
         {
             get
             {
+                Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
                 try
                 {
                     var dteProject = DteProject;

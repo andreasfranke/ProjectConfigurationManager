@@ -41,6 +41,7 @@
 
         public bool SetConfiguration([NotNull] ProjectConfiguration configuration)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             Contract.Requires(configuration != null);
 
             if ((ConfigurationName == configuration.Configuration) && (PlatformName == configuration.Platform))
@@ -65,6 +66,7 @@
             get => ContextIsValid() && _context.ShouldBuild;
             set
             {
+                Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
                 if (!ContextIsValid())
                     return;
 
@@ -77,7 +79,8 @@
 
         private bool ContextIsValid()
         {
-            // Check if the owning collection is valid - accessing other properites would throw an AccessViolationException!
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+            // Check if the owning collection is valid - accessing other properties would throw an AccessViolationException!
             if (_context.Collection?.Count != 0)
                 return true;
 

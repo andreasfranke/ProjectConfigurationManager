@@ -225,13 +225,14 @@
 
         private static void ReloadProject([NotNull] Dispatcher dispatcher, [NotNull] IVsSolution4 solution, int retry, Guid projectGuid)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var hr = solution.ReloadProject(ref projectGuid);
             if (hr == 0)
                 return;
 
             if (retry < 3)
             {
-                dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => ReloadProject(dispatcher, solution, retry + 1, projectGuid));
+                _ = dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => ReloadProject(dispatcher, solution, retry + 1, projectGuid));
             }
         }
 

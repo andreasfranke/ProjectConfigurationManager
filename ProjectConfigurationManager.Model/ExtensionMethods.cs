@@ -9,7 +9,7 @@
     using System.Xml.Linq;
 
     using JetBrains.Annotations;
-
+    using Microsoft;
     using Microsoft.VisualStudio.Shell.Interop;
 
     internal static class ExtensionMethods
@@ -120,7 +120,7 @@
         {
             Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var solution = (IVsSolution) serviceProvider.GetService(typeof(SVsSolution));
-
+            Assumes.Present(solution);
             Debug.Assert(solution != null, nameof(solution) + " != null");
             solution.GetGuidOfProject(projectHierarchy, out var projectGuid);
             return projectGuid;

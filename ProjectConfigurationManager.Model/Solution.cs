@@ -40,6 +40,7 @@
         [ImportingConstructor]
         public Solution([NotNull] ITracer tracer, [NotNull] IVsServiceProvider serviceProvider, [NotNull] PerformanceTracer performanceTracer)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             Tracer = tracer;
             _serviceProvider = serviceProvider;
             _performanceTracer = performanceTracer;
@@ -143,7 +144,7 @@
                 {
                     Tracer.WriteLine("Retry Update...");
                     // could not access the project file, retry later...
-                    Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => Update(retry + 1));
+                    _ = Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => Update(retry + 1));
                 }
                 catch (Exception ex)
                 {
@@ -185,7 +186,7 @@
 
         private void Watcher_Changed([NotNull] object sender, [NotNull] FileSystemEventArgs e)
         {
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, 0));
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, 0));
         }
 
         private void DeferredOnWatcherChanged([NotNull] FileSystemEventArgs e, int retry)
@@ -211,7 +212,7 @@
                             throw;
 
                         // could not access the project file, retry later...
-                        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => DeferredOnWatcherChanged(e, retry + 1));
+                        _ = Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => DeferredOnWatcherChanged(e, retry + 1));
                         return;
                     }
 
@@ -222,7 +223,7 @@
             {
                 if (ex is RetryException)
                 {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, retry + 1));
+                    _ = Dispatcher.BeginInvoke(DispatcherPriority.Background, () => DeferredOnWatcherChanged(e, retry + 1));
                 }
 
                 Tracer.TraceError(ex);
@@ -277,6 +278,7 @@
         [NotNull, ItemNotNull]
         private IEnumerable<Project> GetProjects(bool retryOnErrors)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var solution = (IVsSolution)GetService(typeof(IVsSolution));
 
             foreach (var projectHierarchy in GetProjectsInSolution(solution, __VSENUMPROJFLAGS.EPF_ALLINSOLUTION))
