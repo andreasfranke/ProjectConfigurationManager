@@ -114,7 +114,7 @@
 
                     Contract.Assume(context != null);
 
-                    var configChanged = context.SetConfiguration(_projectConfiguration);
+                    bool configChanged = context.SetConfiguration(_projectConfiguration);
 
                     context.ShouldBuild = value.HasValue;
 

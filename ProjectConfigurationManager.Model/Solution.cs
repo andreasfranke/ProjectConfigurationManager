@@ -315,6 +315,7 @@
         [NotNull, ItemNotNull]
         private static IEnumerable<IVsHierarchy> GetProjectsInSolution([CanBeNull] IVsSolution solution, __VSENUMPROJFLAGS flags)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             if (solution == null)
                 yield break;
 

@@ -44,11 +44,13 @@
 
         public void TraceError(string value)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             WriteLine("Error: " + value);
         }
 
         public void WriteLine(string value)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             LogMessageToOutputWindow(value + Environment.NewLine);
         }
     }

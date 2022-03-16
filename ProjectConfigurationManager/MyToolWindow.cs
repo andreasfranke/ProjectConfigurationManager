@@ -112,6 +112,7 @@
 
         private void Navigate_Click([NotNull] object sender, [NotNull] RoutedEventArgs e)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             string url;
 
             if (e.OriginalSource is FrameworkElement source)
