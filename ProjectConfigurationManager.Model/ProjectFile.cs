@@ -144,6 +144,7 @@
 
         private bool CanCheckout()
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var service = (IVsQueryEditQuerySave2)_solution.GetService(typeof(SVsQueryEditQuerySave));
             if (service == null)
                 return true;
@@ -170,15 +171,16 @@
         [Throttled(typeof(DispatcherThrottle))]
         private void SaveChanges()
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             IsSaving = true;
 
             var outputFileName = _project.FullName;
 
-            _dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
-            {
-                IsSaving = false;
-                FileTime = File.GetLastWriteTime(outputFileName);
-            });
+            _ = _dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
+              {
+                  IsSaving = false;
+                  FileTime = File.GetLastWriteTime(outputFileName);
+              });
 
             var projectGuid = _projectGuid;
             var solution = _solution.GetService(typeof(SVsSolution)) as IVsSolution4;
@@ -191,7 +193,7 @@
             if (_project.IsLoaded)
             {
                 reloadProject = true;
-                solution?.UnloadProject(ref projectGuid, (int)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser);
+                _ = (solution?.UnloadProject(ref projectGuid, (int)_VSProjectUnloadStatus.UNLOADSTATUS_UnloadedByUser));
             }
 
             var settings = new XmlWriterSettings

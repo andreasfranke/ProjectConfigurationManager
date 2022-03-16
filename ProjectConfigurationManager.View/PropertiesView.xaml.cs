@@ -72,7 +72,7 @@
 
             var listBox = (ListBox)sender;
 
-            listBox.BeginInvoke(() => listBox.SelectAll());
+            _ = listBox.BeginInvoke(() => listBox.SelectAll());
         }
 
         private void ConfirmedCommandConverter_Error([NotNull] object sender, [NotNull] ErrorEventArgs e)
@@ -87,15 +87,6 @@
         private void ConfirmedCommandConverter_OnExecuting([NotNull] object sender, [NotNull] ConfirmedCommandEventArgs e)
         {
             WaitCursor.StartLocal(this);
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        [Conditional("CONTRACTS_FULL")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_tracer != null);
-            Contract.Invariant(DataGrid != null);
         }
     }
 }

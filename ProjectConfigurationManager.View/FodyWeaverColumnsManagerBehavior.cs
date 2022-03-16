@@ -109,7 +109,7 @@
         [NotNull]
         private DataGridColumn CreateColumn(int index)
         {
-            var configurationBinding = new Binding("Configuration[" + index + "]");
+            Binding configurationBinding = new Binding("Configuration[" + index.ToString(CultureInfo.CurrentCulture) + "]");
             // ReSharper disable once AssignNullToNotNullAttribute
             var transparentBackgoundSetter = new Setter(Control.BackgroundProperty, Brushes.Transparent);
 

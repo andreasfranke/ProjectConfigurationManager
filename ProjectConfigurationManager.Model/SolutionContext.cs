@@ -19,6 +19,7 @@
 
         public SolutionContext([NotNull] Solution solution, [NotNull] SolutionConfiguration solutionConfiguration, [NotNull] EnvDTE.SolutionContext context)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             Contract.Requires(solution != null);
             Contract.Requires(solutionConfiguration != null);
             Contract.Requires(context != null);
@@ -86,21 +87,5 @@
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
-
-        [UsedImplicitly]
-        private void OnPropertyChanged([NotNull] string propertyName)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        [Conditional("CONTRACTS_FULL")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_solution != null);
-            Contract.Invariant(SolutionConfiguration != null);
-            Contract.Invariant(_context != null);
-        }
     }
 }

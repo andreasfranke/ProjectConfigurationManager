@@ -32,7 +32,9 @@
     // This attribute is needed to let the shell know that this package exposes some menus.
     [ProvideMenuResource("Menus.ctmenu", 1)]
     // This attribute registers a tool window exposed by this package.
+#pragma warning disable VSSDK003 // Support async tool windows
     [ProvideToolWindow(typeof(MyToolWindow))]
+#pragma warning restore VSSDK003 // Support async tool windows
     [Guid(GuidList.guidProjectConfigurationManagerPkgString)]
     public sealed class ProjectConfigurationManagerPackage : AsyncPackage
     {
@@ -43,6 +45,7 @@
         /// </summary>
         private void ShowToolWindow([NotNull] object sender, [NotNull] EventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             // Get the instance number 0 of this tool window. This window is single instance so this instance
             // is actually the only one.
             // The last flag is set to true so that if the tool window does not exists it will be created.

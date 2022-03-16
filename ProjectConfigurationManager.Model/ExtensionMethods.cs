@@ -118,6 +118,7 @@
 
         public static Guid GetProjectGuid([NotNull] this IServiceProvider serviceProvider, [NotNull] IVsHierarchy projectHierarchy)
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var solution = (IVsSolution) serviceProvider.GetService(typeof(SVsSolution));
 
             Debug.Assert(solution != null, nameof(solution) + " != null");

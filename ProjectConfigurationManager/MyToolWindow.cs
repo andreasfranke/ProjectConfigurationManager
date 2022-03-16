@@ -141,6 +141,7 @@
         [Localizable(false)]
         private void CreateWebBrowser([NotNull] string url)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             Contract.Requires(url != null);
 
             var webBrowsingService = (IVsWebBrowsingService)GetService(typeof(SVsWebBrowsingService));
@@ -160,7 +161,6 @@
 
         [ContractVerification(false)]
         [NotNull]
-        [SuppressMessage("ReSharper", "PossibleNullReferenceException")]
         private static RegistrationBuilder CreateRegistrationContext()
         {
             Contract.Ensures(Contract.Result<RegistrationBuilder>() != null);
@@ -179,15 +179,6 @@
 
             return constructors.SingleOrDefault(c => c.GetCustomAttributes<ImportingConstructorAttribute>().Any())
                    ?? constructors.OrderByDescending(c => c.GetParameters().Length).FirstOrDefault();
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        [Conditional("CONTRACTS_FULL")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_compositionHost != null);
-            Contract.Invariant(_tracer != null);
         }
     }
 }

@@ -187,6 +187,7 @@
         {
             get
             {
+                Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
                 ProjectHierarchy.GetProperty(VSConstants.VSITEMID_ROOT, (int)__VSHPROPID.VSHPROPID_ExtObject, out var obj);
                 return obj as EnvDTE.Project;
 
@@ -267,6 +268,7 @@
 
         public void UnloadProject()
         {
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
             var solution = Solution.GetService(typeof(SVsSolution)) as IVsSolution4;
 
             var projectGuid = Solution.GetProjectGuid(ProjectHierarchy);

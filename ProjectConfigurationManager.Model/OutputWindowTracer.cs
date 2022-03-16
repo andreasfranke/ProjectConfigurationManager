@@ -25,8 +25,8 @@
 
         private void LogMessageToOutputWindow([CanBeNull] string value)
         {
-            var outputWindow = _serviceProvider.GetService(typeof(SVsOutputWindow)) as IVsOutputWindow;
-            if (outputWindow == null)
+            Microsoft.VisualStudio.Shell.ThreadHelper.ThrowIfNotOnUIThread();
+            if (!(_serviceProvider.GetService(typeof(SVsOutputWindow)) is IVsOutputWindow outputWindow))
                 return;
 
             var outputPaneGuid = new Guid("{4FDC5538-066E-4942-A1FC-15BCB6602D30}");
@@ -39,7 +39,7 @@
                 outputWindow.GetPane(ref outputPaneGuid, out pane);
             }
 
-            pane?.OutputString(value);
+            pane?.OutputStringThreadSafe(value);
         }
 
         public void TraceError(string value)
@@ -50,14 +50,6 @@
         public void WriteLine(string value)
         {
             LogMessageToOutputWindow(value + Environment.NewLine);
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        [Conditional("CONTRACTS_FULL")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(_serviceProvider != null);
         }
     }
 }

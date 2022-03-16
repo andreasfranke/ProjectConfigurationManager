@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<assembly name="ProjectConfigurationManager2022">
+  <member name="M:tomenglertde.ProjectConfigurationManager.ProjectConfigurationManagerPackage.Dummy">
+    <attribute ctor="M:JetBrains.Annotations.UsedImplicitlyAttribute.#ctor" />
+  </member>
+  <member name="M:tomenglertde.ProjectConfigurationManager.ProjectConfigurationManagerPackage.InitializeAsync(System.Threading.CancellationToken,System.IProgress{Microsoft.VisualStudio.Shell.ServiceProgressData})">
+    <parameter name="progress">
+      <attribute ctor="M:JetBrains.Annotations.NotNullAttribute.#ctor" />
+    </parameter>
+  </member>
+</assembly>

@@ -70,7 +70,7 @@
                 // ReSharper disable once PossibleNullReferenceException
                 .ForEach(i => dispatcher.BeginInvoke(DispatcherPriority.Input, () => i.IsExpanded = isExpanded));
 
-            dispatcher.BeginInvoke(DispatcherPriority.Background, () => _ancestors = null);
+            _ = dispatcher.BeginInvoke(DispatcherPriority.Background, () => _ancestors = null);
         }
     }
 }

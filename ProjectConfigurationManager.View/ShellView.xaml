@@ -6,7 +6,7 @@
              xmlns:toms="urn:TomsToolbox"
              xmlns:view="clr-namespace:tomenglertde.ProjectConfigurationManager.View"
              xmlns:styles="urn:TomsToolbox.Wpf.Styles"
-             xmlns:shell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.14.0"
+             xmlns:shell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
              UseLayoutRounding="True" TextOptions.TextFormattingMode="Display"
              Foreground="{DynamicResource {x:Static shell:VsBrushes.WindowTextKey}}"
              Background="{DynamicResource {x:Static shell:VsBrushes.WindowKey}}">

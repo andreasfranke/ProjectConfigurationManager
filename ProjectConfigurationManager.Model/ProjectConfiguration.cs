@@ -121,22 +121,14 @@
                     if (!configChanged)
                         return;
 
-                    Dispatcher.CurrentDispatcher.BeginInvoke(() =>
-                    {
-                        foreach (var configuration in _projectConfiguration.Project.SpecificProjectConfigurations)
-                        {
-                            configuration.OnPropertyChanged(nameof(ShouldBuild));
-                        }
-                    });
+                    _ = Dispatcher.CurrentDispatcher.BeginInvoke(() =>
+                      {
+                          foreach (var configuration in _projectConfiguration.Project.SpecificProjectConfigurations)
+                          {
+                              configuration.OnPropertyChanged(nameof(ShouldBuild));
+                          }
+                      });
                 }
-            }
-
-            [ContractInvariantMethod]
-            [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-            [Conditional("CONTRACTS_FULL")]
-            private void ObjectInvariant()
-            {
-                Contract.Invariant(_projectConfiguration != null);
             }
         }
 
@@ -171,16 +163,8 @@
                     property.Value = value ?? string.Empty;
 
                     // Defer property change notifications, else bulk operations on data grid will fail...
-                    Dispatcher.CurrentDispatcher.BeginInvoke(() => _projectConfiguration.OnPropertyChanged(nameof(PropertyValue)));
+                    _ = Dispatcher.CurrentDispatcher.BeginInvoke(() => _projectConfiguration.OnPropertyChanged(nameof(PropertyValue)));
                 }
-            }
-
-            [ContractInvariantMethod]
-            [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-            [Conditional("CONTRACTS_FULL")]
-            private void ObjectInvariant()
-            {
-                Contract.Invariant(_projectConfiguration != null);
             }
         }
 
@@ -213,17 +197,6 @@
         private void OnPropertyChanged([NotNull] string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        [ContractInvariantMethod]
-        [SuppressMessage("Microsoft.Performance", "CA1822:MarkMembersAsStatic", Justification = "Required for code contracts.")]
-        [Conditional("CONTRACTS_FULL")]
-        private void ObjectInvariant()
-        {
-            Contract.Invariant(Project != null);
-            Contract.Invariant(ShouldBuild != null);
-            Contract.Invariant(PropertyValue != null);
-            Contract.Invariant(_properties != null);
         }
     }
 }

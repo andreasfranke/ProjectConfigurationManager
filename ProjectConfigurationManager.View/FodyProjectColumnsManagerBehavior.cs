@@ -118,7 +118,6 @@
             SetWeaverConfiguration((DataGrid)sender, number);
         }
 
-        [SuppressMessage("ReSharper", "PossibleNullReferenceException")]
         private void SetWeaverConfiguration([NotNull] DataGrid dataGrid, int number)
         {
             foreach (var cell in dataGrid.SelectedCells)
